@@ -1,5 +1,5 @@
 const GEMINI_UPLOAD_URL = "https://generativelanguage.googleapis.com/upload/v1beta/files";
-const GEMINI_GENERATE_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+const GEMINI_GENERATE_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
 function getApiKey(): string {
   const key = process.env.GEMINI_API_KEY;
@@ -71,49 +71,53 @@ export async function analyzeVideo(
   fileUri: string,
   mimeType: string,
   analysisPrompt: string,
-  maxRetries = 3
+  maxRetries = 5
 ): Promise<string> {
   const key = getApiKey();
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      const response = await fetch(`${GEMINI_GENERATE_URL}?key=${key}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [
-                { fileData: { fileUri, mimeType } },
-                { text: analysisPrompt },
-              ],
-            },
-          ],
-        }),
-      });
+    const response = await fetch(`${GEMINI_GENERATE_URL}?key=${key}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { fileData: { fileUri, mimeType } },
+              { text: analysisPrompt },
+            ],
+          },
+        ],
+      }),
+    });
 
-      if (!response.ok) {
-        const text = await response.text();
-        if (attempt < maxRetries - 1) {
-          await new Promise((r) => setTimeout(r, 5000));
-          continue;
-        }
-        throw new Error(`Gemini analysis error ${response.status}: ${text}`);
-      }
+    if (!response.ok) {
+      const text = await response.text();
 
-      const data = await response.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      // Strip everything before first # (same as n8n workflow)
-      const hashIndex = text.indexOf("#");
-      return hashIndex >= 0 ? text.substring(hashIndex) : text;
-    } catch (error) {
-      if (attempt < maxRetries - 1) {
-        await new Promise((r) => setTimeout(r, 5000));
+      if (response.status === 429 && attempt < maxRetries - 1) {
+        // Parse the retryDelay from the API response (e.g. "18s"), fall back to 30s
+        let retrySeconds = 30;
+        try {
+          const json = JSON.parse(text);
+          const retryInfo = json?.error?.details?.find(
+            (d: { "@type": string }) => d["@type"] === "type.googleapis.com/google.rpc.RetryInfo"
+          );
+          if (retryInfo?.retryDelay) {
+            retrySeconds = parseInt(retryInfo.retryDelay) + 5; // add 5s buffer
+          }
+        } catch { /* use default */ }
+        await new Promise((r) => setTimeout(r, retrySeconds * 1000));
         continue;
       }
-      throw error;
+
+      throw new Error(`Gemini analysis error ${response.status}: ${text}`);
     }
+
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const hashIndex = text.indexOf("#");
+    return hashIndex >= 0 ? text.substring(hashIndex) : text;
   }
 
   throw new Error("Gemini analysis failed after retries");

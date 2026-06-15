@@ -5,7 +5,7 @@ import { uploadVideo, analyzeVideo } from "./gemini";
 import { generateNewConcepts } from "./claude";
 import type { PipelineParams, PipelineProgress, Video, ActiveTask } from "./types";
 
-const VIDEO_CONCURRENCY = 3;
+const VIDEO_CONCURRENCY = 1;
 
 interface ScrapedVideo {
   videoUrl: string;
@@ -87,20 +87,28 @@ export async function runPipeline(
     const creators = allCreators.filter((c) => c.category === config.creatorsCategory);
     if (creators.length === 0) throw new Error(`No creators found for category "${config.creatorsCategory}"`);
 
-    progress.creatorsTotal = creators.length;
-    log(`Found ${creators.length} creators — scraping all in parallel`);
+    // Deduplicate creators by username to avoid duplicate task IDs
+    const seen = new Set<string>();
+    const uniqueCreators = creators.filter((c) => {
+      if (seen.has(c.username)) return false;
+      seen.add(c.username);
+      return true;
+    });
+
+    progress.creatorsTotal = uniqueCreators.length;
+    log(`Found ${uniqueCreators.length} creators — scraping 2 at a time`);
     emit();
 
-    // Phase 1: Scrape all creators in parallel
+    // Phase 1: Scrape creators 2 at a time to stay within Apify's 8192MB memory limit
+    // (each run uses ~1024MB, so 2 concurrent = 2048MB max)
     progress.phase = "scraping";
     const cutoffDate = new Date(Date.now() - params.nDays * 24 * 60 * 60 * 1000);
     const allTopVideos: ScrapedVideo[] = [];
 
-    const scrapeResults = await Promise.allSettled(
-      creators.map(async (creator) => {
-        const taskId = `scrape-${creator.username}`;
-        addTask({ id: taskId, creator: creator.username, step: "Scraping reels" });
-
+    await runWithConcurrency(uniqueCreators, 2, async (creator) => {
+      const taskId = `scrape-${creator.id}`;
+      addTask({ id: taskId, creator: creator.username, step: "Scraping reels" });
+      try {
         const reels = await scrapeReels(creator.username, params.maxVideos, params.nDays);
         updateTask(taskId, `Found ${reels.length} reels`);
 
@@ -122,30 +130,20 @@ export async function runPipeline(
         videos.sort((a, b) => b.views - a.views);
         const topVideos = videos.slice(0, params.topK);
 
-        updateTask(taskId, `Top ${topVideos.length} selected`);
         log(`@${creator.username}: ${reels.length} reels → top ${topVideos.length} selected`);
-
-        removeTask(taskId);
-        progress.creatorsScraped++;
-        emit();
-
-        return { creator: creator.username, videos: topVideos };
-      })
-    );
-
-    for (const result of scrapeResults) {
-      if (result.status === "fulfilled") {
-        for (const v of result.value.videos) {
-          allTopVideos.push(v);
-        }
+        for (const v of topVideos) allTopVideos.push(v);
         progress.creatorsCompleted++;
-      } else {
-        const msg = `Scraping error: ${result.reason instanceof Error ? result.reason.message : result.reason}`;
+        progress.creatorsScraped++;
+      } catch (err) {
+        const msg = `Scraping error: ${err instanceof Error ? err.message : err}`;
         progress.errors.push(msg);
         log(msg);
         progress.creatorsCompleted++;
+      } finally {
+        removeTask(taskId);
+        emit();
       }
-    }
+    });
 
     progress.videosTotal = allTopVideos.length;
     log(`Scraping done. ${allTopVideos.length} videos to analyze (${VIDEO_CONCURRENCY} workers)`);

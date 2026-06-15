@@ -34,6 +34,7 @@ export default function CreatorsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Creator | null>(null);
   const [form, setForm] = useState({ username: "", category: "" });
+  const [isNewCategory, setIsNewCategory] = useState(false);
   const [filterCategory, setFilterCategory] = useState("all");
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -54,12 +55,14 @@ export default function CreatorsPage() {
   const openNew = () => {
     setEditing(null);
     setForm({ username: "", category: "" });
+    setIsNewCategory(false);
     setDialogOpen(true);
   };
 
   const openEdit = (creator: Creator) => {
     setEditing(creator);
     setForm({ username: creator.username, category: creator.category });
+    setIsNewCategory(!uniqueCategories.includes(creator.category));
     setDialogOpen(true);
   };
 
@@ -204,12 +207,53 @@ export default function CreatorsPage() {
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">Category</Label>
-                  <Input
-                    value={form.category}
-                    onChange={(e) => setForm({ ...form, category: e.target.value })}
-                    placeholder="e.g. dubai-real-estate"
-                    className="mt-1.5 rounded-xl glass border-white/[0.08] h-11"
-                  />
+                  {!isNewCategory ? (
+                    <Select
+                      value={form.category}
+                      onValueChange={(val) => {
+                        if (val === "__new__") {
+                          setIsNewCategory(true);
+                          setForm({ ...form, category: "" });
+                        } else {
+                          setForm({ ...form, category: val });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="mt-1.5 rounded-xl glass border-white/[0.08] h-11">
+                        <SelectValue placeholder="Select a category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {uniqueCategories.map((c) => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
+                        <SelectItem value="__new__">
+                          <span className="flex items-center gap-1.5 text-purple-400">
+                            <Plus className="h-3.5 w-3.5" /> Add new category...
+                          </span>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="flex gap-2 mt-1.5">
+                      <Input
+                        autoFocus
+                        value={form.category}
+                        onChange={(e) => setForm({ ...form, category: e.target.value })}
+                        placeholder="e.g. dubai-real-estate"
+                        className="rounded-xl glass border-white/[0.08] h-11"
+                      />
+                      {uniqueCategories.length > 0 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="shrink-0 h-11 px-3 rounded-xl glass border border-white/[0.08] text-xs text-muted-foreground hover:text-foreground"
+                          onClick={() => { setIsNewCategory(false); setForm({ ...form, category: "" }); }}
+                        >
+                          Back
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 {!editing && (
                   <p className="text-[11px] text-muted-foreground">
