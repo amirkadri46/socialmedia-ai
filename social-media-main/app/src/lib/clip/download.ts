@@ -20,16 +20,18 @@ function jobDir(jobId: string): string {
  * Fetch metadata for a remote video URL without downloading it.
  * Mirrors OpusClip's "fetch video" step — used by the configure screen.
  */
-export async function inspect(url: string): Promise<SourceMeta> {
+export async function inspect(url: string, cookiesBrowser?: string): Promise<SourceMeta> {
   if (!(await ytDlpAvailable())) {
     throw new Error(
       "yt-dlp is not installed. Install it (brew install yt-dlp / pip install yt-dlp / winget install yt-dlp) or set YT_DLP_PATH. See Settings for details."
     );
   }
+  const cookiesArgs = cookiesBrowser ? ["--cookies-from-browser", cookiesBrowser] : [];
   const { stdout } = await run(ytDlpPath(), [
     "--dump-single-json",
     "--no-warnings",
     "--no-playlist",
+    ...cookiesArgs,
     url,
   ]);
   const json = JSON.parse(stdout);
@@ -49,7 +51,8 @@ export async function inspect(url: string): Promise<SourceMeta> {
 export async function downloadVideo(
   url: string,
   jobId: string,
-  onProgress?: (line: string) => void
+  onProgress?: (line: string) => void,
+  cookiesBrowser?: string
 ): Promise<{ path: string; meta: SourceMeta }> {
   if (!(await ytDlpAvailable())) {
     throw new Error(
@@ -58,6 +61,7 @@ export async function downloadVideo(
   }
   const dir = jobDir(jobId);
   const outTemplate = path.join(dir, "source.%(ext)s");
+  const cookiesArgs = cookiesBrowser ? ["--cookies-from-browser", cookiesBrowser] : [];
 
   await run(
     ytDlpPath(),
@@ -68,6 +72,7 @@ export async function downloadVideo(
       "--ffmpeg-location", path.dirname(ffmpegPath()),
       "--no-playlist",
       "--no-warnings",
+      ...cookiesArgs,
       "-o", outTemplate,
       url,
     ],

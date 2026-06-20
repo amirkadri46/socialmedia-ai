@@ -77,6 +77,7 @@ export default function SettingsPage() {
   const [defaultCaptionPreset, setDefaultCaptionPreset] = useState("Karaoke");
   const [defaultAspectRatio, setDefaultAspectRatio] = useState("9:16");
   const [defaultClipLength, setDefaultClipLength] = useState("Auto (0-3m)");
+  const [ytDlpCookiesBrowser, setYtDlpCookiesBrowser] = useState("");
   // Social
   const [metaAppId, setMetaAppId] = useState("");
   const [metaAppSecret, setMetaAppSecret] = useState("");
@@ -102,6 +103,7 @@ export default function SettingsPage() {
         setDefaultCaptionPreset(s.defaultCaptionPreset ?? "Karaoke");
         setDefaultAspectRatio(s.defaultAspectRatio ?? "9:16");
         setDefaultClipLength(s.defaultClipLength ?? "Auto (0-3m)");
+        setYtDlpCookiesBrowser(s.ytDlpCookiesBrowser ?? "");
         setMetaAppId(s.metaAppId ?? "");
         setMetaAppSecret(s.metaAppSecret ?? "");
         setEnableSocialPublish(!!s.enableSocialPublish);
@@ -129,6 +131,7 @@ export default function SettingsPage() {
         defaultCaptionPreset,
         defaultAspectRatio,
         defaultClipLength,
+        ytDlpCookiesBrowser,
         metaAppId,
         metaAppSecret,
         enableSocialPublish,
@@ -393,6 +396,26 @@ export default function SettingsPage() {
           Requires <span className="font-mono text-foreground/70">yt-dlp</span> and a transcription key.
           Install yt-dlp once (brew install yt-dlp · pip install yt-dlp · winget install yt-dlp) or set{" "}
           <span className="font-mono text-foreground/70">YT_DLP_PATH</span>. ffmpeg is bundled.
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs text-muted-foreground">YouTube Cookies Browser</Label>
+          <Select value={ytDlpCookiesBrowser || "none"} onValueChange={(v) => setYtDlpCookiesBrowser(v === "none" ? "" : v)}>
+            <SelectTrigger className="rounded-xl glass border-white/[0.08] h-11">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="glass-strong rounded-xl border-white/[0.08]">
+              <SelectItem value="none" className="rounded-lg cursor-pointer">None (no cookies)</SelectItem>
+              <SelectItem value="chrome" className="rounded-lg cursor-pointer">Chrome</SelectItem>
+              <SelectItem value="firefox" className="rounded-lg cursor-pointer">Firefox</SelectItem>
+              <SelectItem value="edge" className="rounded-lg cursor-pointer">Edge</SelectItem>
+              <SelectItem value="brave" className="rounded-lg cursor-pointer">Brave</SelectItem>
+              <SelectItem value="chromium" className="rounded-lg cursor-pointer">Chromium</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-[11px] text-muted-foreground">
+            If YouTube blocks yt-dlp with &ldquo;Sign in to confirm you&apos;re not a bot&rdquo;, pick the browser you&apos;re logged into YouTube with. yt-dlp will read its cookies automatically.
+          </p>
         </div>
 
         <div className="space-y-2">

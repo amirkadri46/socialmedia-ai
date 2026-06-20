@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { inspect } from "@/lib/clip/download";
+import { readSettings } from "@/lib/settings";
 
 export const maxDuration = 60;
 
@@ -9,7 +10,8 @@ export async function POST(request: Request) {
     if (!url || !/^https?:\/\//.test(url)) {
       return NextResponse.json({ error: "A valid http(s) URL is required." }, { status: 400 });
     }
-    const meta = await inspect(url);
+    const { ytDlpCookiesBrowser } = readSettings();
+    const meta = await inspect(url, ytDlpCookiesBrowser || undefined);
     return NextResponse.json(meta);
   } catch (err) {
     return NextResponse.json(

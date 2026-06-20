@@ -21,6 +21,7 @@ export interface AppSettings {
   defaultCaptionPreset: string;
   defaultAspectRatio: string;
   defaultClipLength: string;
+  ytDlpCookiesBrowser: string;
   // Social
   metaAppId: string;
   metaAppSecret: string;
@@ -43,6 +44,7 @@ const DEFAULTS: AppSettings = {
   defaultCaptionPreset: "Karaoke",
   defaultAspectRatio: "9:16",
   defaultClipLength: "Auto (0-3m)",
+  ytDlpCookiesBrowser: "",
   // Social
   metaAppId: "",
   metaAppSecret: "",

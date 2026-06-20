@@ -22,6 +22,7 @@ export async function POST(req: Request) {
     defaultCaptionPreset: body.defaultCaptionPreset ?? "Karaoke",
     defaultAspectRatio: body.defaultAspectRatio ?? "9:16",
     defaultClipLength: body.defaultClipLength ?? "Auto (0-3m)",
+    ytDlpCookiesBrowser: body.ytDlpCookiesBrowser ?? "",
     metaAppId: body.metaAppId ?? "",
     metaAppSecret: body.metaAppSecret ?? "",
     enableSocialPublish: body.enableSocialPublish ?? false,
