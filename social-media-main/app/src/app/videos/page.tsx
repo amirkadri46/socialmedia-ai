@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,10 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Heart, MessageCircle, Film, Sparkles, Search, Star, Play, ArrowUpDown, X, ExternalLink } from "lucide-react";
+import {
+  Heart, MessageCircle, Film, Sparkles, Search, Star, Play,
+  ArrowUpDown, X, ExternalLink, GripVertical, RotateCcw,
+} from "lucide-react";
 import { MarkdownContent } from "@/components/markdown-content";
 import type { Video, Config } from "@/lib/types";
 
@@ -46,12 +49,70 @@ function VideosContent() {
   const [modalVideo, setModalVideo] = useState<Video | null>(null);
   const [modalSection, setModalSection] = useState<"analysis" | "concepts">("analysis");
 
+  // Drag-to-reorder state
+  const [customOrder, setCustomOrder] = useState<string[] | null>(null);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  // Resizable modal state
+  const [modalWidth, setModalWidth] = useState(() => {
+    if (typeof window === "undefined") return 800;
+    return parseInt(localStorage.getItem("video-modal-width") || "800", 10);
+  });
+  const isResizingRef = useRef(false);
+  const resizeDirRef = useRef<"left" | "right">("right");
+  const startXRef = useRef(0);
+  const startWidthRef = useRef(0);
+
   useEffect(() => {
     fetch("/api/videos").then((r) => r.json()).then(setVideos);
     fetch("/api/configs").then((r) => r.json()).then(setConfigs);
   }, []);
 
-  const uniqueCreators = [...new Set(videos.map((v) => v.creator))].sort();
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const delta = e.clientX - startXRef.current;
+      const sign = resizeDirRef.current === "right" ? 1 : -1;
+      const newWidth = Math.max(560, Math.min(window.innerWidth - 60, startWidthRef.current + sign * delta));
+      setModalWidth(newWidth);
+      localStorage.setItem("video-modal-width", String(Math.round(newWidth)));
+    };
+    const onMouseUp = () => { isResizingRef.current = false; };
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
+  const startModalResize = (e: React.MouseEvent, dir: "left" | "right") => {
+    isResizingRef.current = true;
+    resizeDirRef.current = dir;
+    startXRef.current = e.clientX;
+    startWidthRef.current = modalWidth;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  // Reset custom order when filters or sort change
+  useEffect(() => {
+    setCustomOrder(null);
+  }, [filterConfig, filterCreator, sortBy]);
+
+  // Reset creator filter when config changes so a cross-config creator can't stay selected
+  useEffect(() => {
+    setFilterCreator("all");
+  }, [filterConfig]);
+
+  const uniqueCreators = [
+    ...new Set(
+      videos
+        .filter((v) => filterConfig === "all" || v.configName === filterConfig)
+        .map((v) => v.creator)
+    ),
+  ].sort();
 
   const filtered = videos
     .filter((v) => {
@@ -70,6 +131,22 @@ function VideosContent() {
       return 0;
     });
 
+  // Apply custom order on top of filtered/sorted list
+  const display = useMemo(() => {
+    if (!customOrder) return filtered;
+    const idMap = new Map<string, Video>(filtered.map((v) => [v.id || v.link, v]));
+    const ordered: Video[] = [];
+    for (const id of customOrder) {
+      const v = idMap.get(id);
+      if (v) ordered.push(v);
+    }
+    const orderedSet = new Set(customOrder);
+    for (const v of filtered) {
+      if (!orderedSet.has(v.id || v.link)) ordered.push(v);
+    }
+    return ordered;
+  }, [filtered, customOrder]);
+
   const openModal = (video: Video, section: "analysis" | "concepts") => {
     setModalVideo(video);
     setModalSection(section);
@@ -77,9 +154,7 @@ function VideosContent() {
 
   const toggleStar = async (id: string, currentStarred: boolean) => {
     const newStarred = !currentStarred;
-    setVideos((prev) =>
-      prev.map((v) => (v.id === id ? { ...v, starred: newStarred } : v))
-    );
+    setVideos((prev) => prev.map((v) => (v.id === id ? { ...v, starred: newStarred } : v)));
     await fetch("/api/videos", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -87,8 +162,51 @@ function VideosContent() {
     });
   };
 
+  const removeVideo = async (id: string) => {
+    if (!confirm("Remove this video permanently?")) return;
+    setVideos((prev) => prev.filter((v) => v.id !== id));
+    setCustomOrder((prev) => prev ? prev.filter((oid) => oid !== id) : null);
+    await fetch(`/api/videos?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  };
+
+  // Drag handlers
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    setDraggedId(id);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedId(null);
+    setDragOverId(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (id !== dragOverId) setDragOverId(id);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    const fromId = draggedId;
+    setDraggedId(null);
+    setDragOverId(null);
+    if (!fromId || fromId === targetId) return;
+
+    const currentOrder = display.map((v) => v.id || v.link);
+    const fromIdx = currentOrder.indexOf(fromId);
+    const toIdx = currentOrder.indexOf(targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+
+    const newOrder = [...currentOrder];
+    const [removed] = newOrder.splice(fromIdx, 1);
+    newOrder.splice(toIdx, 0, removed);
+    setCustomOrder(newOrder);
+  };
+
   return (
-    <div className="space-y-8">
+    <div className="max-w-6xl mx-auto space-y-8">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Videos</h1>
@@ -137,17 +255,61 @@ function VideosContent() {
         </Select>
 
         <Badge variant="secondary" className="rounded-lg px-3 py-1.5 text-xs bg-white/[0.05] border border-white/[0.08]">
-          {filtered.length} videos
+          {display.length} videos
         </Badge>
+
+        {customOrder && (
+          <button
+            onClick={() => setCustomOrder(null)}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Reset order
+          </button>
+        )}
       </div>
+
+      {/* Drag hint */}
+      {display.length > 0 && (
+        <p className="text-[11px] text-muted-foreground/50 -mt-4">
+          Drag cards to reorder · hover a card for remove button
+        </p>
+      )}
 
       {/* Video Grid — Instagram-style */}
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-        {filtered.map((video) => {
+        {display.map((video) => {
           const id = video.id || video.link;
+          const isDragging = draggedId === id;
+          const isDragOver = dragOverId === id && draggedId !== id;
 
           return (
-            <div key={id} className="group">
+            <div
+              key={id}
+              className={`group relative transition-all duration-150 ${isDragging ? "opacity-40 scale-95" : ""} ${isDragOver ? "ring-2 ring-purple-500/60 rounded-2xl" : ""}`}
+              draggable
+              onDragStart={(e) => handleDragStart(e, id)}
+              onDragEnd={handleDragEnd}
+              onDragOver={(e) => handleDragOver(e, id)}
+              onDrop={(e) => handleDrop(e, id)}
+            >
+              {/* Drag handle — top-left, visible on hover */}
+              <div
+                className="absolute top-2 left-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing h-6 w-6 rounded-md bg-black/60 border border-white/10 flex items-center justify-center"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <GripVertical className="h-3.5 w-3.5 text-white/70" />
+              </div>
+
+              {/* Remove button — top-right, visible on hover */}
+              <button
+                className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 rounded-full bg-black/60 border border-white/10 flex items-center justify-center text-red-400 hover:text-red-300 hover:bg-red-500/20"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeVideo(id); }}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <X className="h-3 w-3" />
+              </button>
+
               <div className="glass rounded-2xl overflow-hidden transition-all duration-300 hover:border-white/[0.12]">
                 {/* Thumbnail — clickable, 9:16 ratio */}
                 <a
@@ -237,7 +399,7 @@ function VideosContent() {
         })}
       </div>
 
-      {filtered.length === 0 && (
+      {display.length === 0 && (
         <div className="glass rounded-2xl p-12 text-center">
           <Film className="mx-auto h-10 w-10 text-muted-foreground/30" />
           <h3 className="mt-4 font-semibold">No videos found</h3>
@@ -249,7 +411,25 @@ function VideosContent() {
 
       {/* Analysis / Concepts Modal */}
       <Dialog open={!!modalVideo} onOpenChange={(open) => { if (!open) setModalVideo(null); }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden glass-strong rounded-2xl border-white/[0.08] p-0 gap-0">
+        <DialogContent
+          className="max-h-[90vh] overflow-hidden glass-strong rounded-2xl border-white/[0.08] p-0 gap-0"
+          style={{ width: modalWidth, maxWidth: "95vw" }}
+        >
+          {/* Left resize handle */}
+          <div
+            className="absolute left-0 top-0 h-full w-2 cursor-ew-resize z-50 group/handle"
+            onMouseDown={(e) => startModalResize(e, "left")}
+          >
+            <div className="h-full w-full opacity-0 group-hover/handle:opacity-100 bg-purple-500/20 transition-opacity" />
+          </div>
+          {/* Right resize handle */}
+          <div
+            className="absolute right-0 top-0 h-full w-2 cursor-ew-resize z-50 group/handle"
+            onMouseDown={(e) => startModalResize(e, "right")}
+          >
+            <div className="h-full w-full opacity-0 group-hover/handle:opacity-100 bg-purple-500/20 transition-opacity" />
+          </div>
+
           <DialogTitle className="sr-only">
             {modalSection === "analysis" ? "Video Analysis" : "New Concepts"}
           </DialogTitle>
@@ -283,6 +463,7 @@ function VideosContent() {
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
                     </a>
+                    <span className="text-[10px] text-muted-foreground/40 ml-1">← drag edges to resize →</span>
                   </div>
                   <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1">

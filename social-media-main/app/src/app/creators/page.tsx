@@ -166,7 +166,7 @@ export default function CreatorsPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="max-w-6xl mx-auto space-y-8">
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Creators</h1>

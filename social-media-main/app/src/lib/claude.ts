@@ -1,6 +1,18 @@
 import OpenAI from "openai";
 import { readSettings } from "./settings";
 
+async function withRetry<T>(fn: () => Promise<T>, retries = 3, baseDelayMs = 1500): Promise<T> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === retries) throw err;
+      await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** attempt));
+    }
+  }
+  throw new Error("unreachable");
+}
+
 export async function generateNewConcepts(
   videoAnalysis: string,
   newConceptsPrompt: string
@@ -22,7 +34,7 @@ export async function generateNewConcepts(
     model = settings.openrouterModel || "deepseek/deepseek-v4-flash";
   }
 
-  const response = await client.chat.completions.create({
+  const response = await withRetry(() => client.chat.completions.create({
     model,
     max_tokens: 4096,
     messages: [
@@ -47,7 +59,7 @@ ${newConceptsPrompt}
 # BEGIN YOUR WORK`,
       },
     ],
-  });
+  }));
 
   return response.choices[0]?.message?.content ?? "";
 }

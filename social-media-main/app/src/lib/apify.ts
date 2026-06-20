@@ -1,3 +1,5 @@
+import { readSettings } from "./settings";
+
 export interface ApifyReel {
   videoUrl: string;
   url: string;
@@ -6,6 +8,7 @@ export interface ApifyReel {
   commentsCount: number;
   ownerUsername: string;
   images: string[];
+  displayUrl?: string;
   timestamp: string;
 }
 
@@ -22,8 +25,8 @@ export interface CreatorStats {
 }
 
 function getToken(): string {
-  const token = process.env.APIFY_API_TOKEN;
-  if (!token) throw new Error("APIFY_API_TOKEN not set");
+  const token = readSettings().apifyApiToken || process.env.APIFY_API_TOKEN;
+  if (!token) throw new Error("APIFY_API_TOKEN not set — configure it in Settings or set the APIFY_API_TOKEN env var");
   return token;
 }
 
@@ -63,6 +66,32 @@ export async function scrapeReels(
 
   const data = await response.json();
   return data as ApifyReel[];
+}
+
+export async function scrapeVideoByUrl(postUrl: string): Promise<ApifyReel | null> {
+  const token = getToken();
+
+  const response = await fetch(
+    `https://api.apify.com/v2/acts/apify~instagram-scraper/run-sync-get-dataset-items?token=${token}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        directUrls: [postUrl],
+        resultsType: "posts",
+        resultsLimit: 1,
+        addParentData: false,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Apify error ${response.status}: ${text}`);
+  }
+
+  const data = await response.json() as ApifyReel[];
+  return data[0] || null;
 }
 
 export async function scrapeCreatorStats(username: string): Promise<CreatorStats> {

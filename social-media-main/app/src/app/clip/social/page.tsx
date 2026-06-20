@@ -1,0 +1,139 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Share2, Instagram, Plus, Trash2, Loader2, AlertTriangle } from "lucide-react";
+
+interface AccountLite {
+  id: string;
+  platform: string;
+  displayName: string;
+  username: string;
+  avatarUrl?: string;
+  connectedAt: string;
+}
+
+export default function SocialPage() {
+  const [accounts, setAccounts] = useState<AccountLite[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [publishEnabled, setPublishEnabled] = useState(false);
+  const [notice, setNotice] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+
+  function load() {
+    fetch("/api/clip/social/accounts")
+      .then((r) => r.json())
+      .then((a: AccountLite[]) => setAccounts(a))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    load();
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((s) => setPublishEnabled(!!s.enableSocialPublish))
+      .catch(() => {});
+
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get("connected")) setNotice({ kind: "ok", msg: `Connected @${sp.get("connected")}` });
+    if (sp.get("error")) setNotice({ kind: "err", msg: decodeURIComponent(sp.get("error")!) });
+    if (sp.get("connected") || sp.get("error")) {
+      window.history.replaceState({}, "", "/clip/social");
+    }
+  }, []);
+
+  async function disconnect(id: string) {
+    await fetch("/api/clip/social/accounts", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    load();
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-6 pb-16">
+      <div>
+        <div className="flex items-center gap-2">
+          <Share2 className="h-5 w-5 text-primary" />
+          <h1 className="text-3xl font-bold tracking-tight">Social Accounts</h1>
+        </div>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Connect Instagram to schedule and publish your clips.
+        </p>
+      </div>
+
+      {notice && (
+        <div
+          className={`rounded-xl border px-4 py-3 text-sm ${
+            notice.kind === "ok"
+              ? "bg-muted text-foreground"
+              : "border-destructive/30 bg-destructive/10 text-destructive"
+          }`}
+        >
+          {notice.msg}
+        </div>
+      )}
+
+      {/* Publish-gating notice */}
+      {!publishEnabled && (
+        <div className="flex items-start gap-3 rounded-xl border bg-muted px-4 py-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-foreground" />
+          <div className="text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Publishing is gated.</span> Connecting and scheduling work now, but live publishing stays off until you create a Meta app, complete App Review, and toggle{" "}
+            <Link href="/settings" className="text-foreground underline hover:no-underline">enableSocialPublish</Link> in Settings (PRD §2.4).
+          </div>
+        </div>
+      )}
+
+      <Card>
+        <CardContent className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">Connected accounts</h2>
+          <Button asChild variant="outline">
+            <a href="/api/clip/social/connect?platform=instagram">
+              <Plus className="h-4 w-4" /> Add account
+            </a>
+          </Button>
+        </div>
+
+        {loading ? (
+          <div className="flex h-20 items-center justify-center text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </div>
+        ) : accounts.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            No accounts connected yet.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {accounts.map((a) => (
+              <div
+                key={a.id}
+                className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3"
+              >
+                <Instagram className="h-5 w-5 text-foreground" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{a.displayName || a.username}</p>
+                  <p className="truncate text-xs text-muted-foreground">@{a.username} · Instagram</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => disconnect(a.id)}
+                  className="text-muted-foreground hover:text-destructive"
+                  title="Disconnect"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

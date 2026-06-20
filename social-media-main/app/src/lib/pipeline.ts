@@ -95,21 +95,36 @@ export async function runPipeline(
       return true;
     });
 
-    progress.creatorsTotal = uniqueCreators.length;
-    log(`Found ${uniqueCreators.length} creators — scraping 2 at a time`);
+    // Filter by selectedCreators if specified
+    const selectedSet =
+      params.selectedCreators && params.selectedCreators.length > 0
+        ? new Set(params.selectedCreators)
+        : null;
+    const activeCreators = selectedSet
+      ? uniqueCreators.filter((c) => selectedSet.has(c.username))
+      : uniqueCreators;
+
+    progress.creatorsTotal = activeCreators.length;
+    log(`Found ${activeCreators.length} creators — scraping 2 at a time`);
     emit();
 
     // Phase 1: Scrape creators 2 at a time to stay within Apify's 8192MB memory limit
     // (each run uses ~1024MB, so 2 concurrent = 2048MB max)
     progress.phase = "scraping";
-    const cutoffDate = new Date(Date.now() - params.nDays * 24 * 60 * 60 * 1000);
     const allTopVideos: ScrapedVideo[] = [];
 
-    await runWithConcurrency(uniqueCreators, 2, async (creator) => {
+    await runWithConcurrency(activeCreators, 2, async (creator) => {
       const taskId = `scrape-${creator.id}`;
       addTask({ id: taskId, creator: creator.username, step: "Scraping reels" });
       try {
-        const reels = await scrapeReels(creator.username, params.maxVideos, params.nDays);
+        // Apply per-creator overrides if present
+        const override = params.creatorOverrides?.find((o) => o.username === creator.username);
+        const creatorNDays = override?.nDays ?? params.nDays;
+        const creatorMaxVideos = override?.maxVideos ?? params.maxVideos;
+        const creatorTopK = override?.topK ?? params.topK;
+        const creatorCutoff = new Date(Date.now() - creatorNDays * 24 * 60 * 60 * 1000);
+
+        const reels = await scrapeReels(creator.username, creatorMaxVideos, creatorNDays);
         updateTask(taskId, `Found ${reels.length} reels`);
 
         const videos = reels
@@ -125,12 +140,12 @@ export async function runPipeline(
             datePosted: r.timestamp?.split("T")[0] || "",
             timestamp: new Date(r.timestamp),
           }))
-          .filter((v) => v.timestamp >= cutoffDate);
+          .filter((v) => v.timestamp >= creatorCutoff);
 
         videos.sort((a, b) => b.views - a.views);
-        const topVideos = videos.slice(0, params.topK);
+        const topVideos = videos.slice(0, creatorTopK);
 
-        log(`@${creator.username}: ${reels.length} reels → top ${topVideos.length} selected`);
+        log(`@${creator.username}: ${reels.length} reels → top ${topVideos.length} selected (${creatorNDays}d lookback)`);
         for (const v of topVideos) allTopVideos.push(v);
         progress.creatorsCompleted++;
         progress.creatorsScraped++;

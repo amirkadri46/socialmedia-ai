@@ -33,3 +33,17 @@ export async function PATCH(request: Request) {
   writeVideos(videos);
   return NextResponse.json(video);
 }
+
+export async function DELETE(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  const videos = readVideos();
+  const newVideos = videos.filter((v) => v.id !== id);
+  if (newVideos.length === videos.length) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+  writeVideos(newVideos);
+  return NextResponse.json({ success: true });
+}

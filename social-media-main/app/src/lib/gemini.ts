@@ -1,10 +1,30 @@
+import { readSettings } from "./settings";
+
 const GEMINI_UPLOAD_URL = "https://generativelanguage.googleapis.com/upload/v1beta/files";
-const GEMINI_GENERATE_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+
+function parseRetryDelaySecs(retryDelay: string): number {
+  const secOnly = retryDelay.match(/^(\d+)s$/);
+  if (secOnly) return parseInt(secOnly[1]);
+  const minSec = retryDelay.match(/^(?:(\d+)m)?(?:(\d+)s)?$/);
+  if (minSec && (minSec[1] || minSec[2])) {
+    return parseInt(minSec[1] ?? "0") * 60 + parseInt(minSec[2] ?? "0");
+  }
+  const iso = retryDelay.match(/^PT(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/i);
+  if (iso && (iso[1] || iso[2])) {
+    return parseInt(iso[1] ?? "0") * 60 + Math.ceil(parseFloat(iso[2] ?? "0"));
+  }
+  return 30;
+}
 
 function getApiKey(): string {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY not set");
   return key;
+}
+
+function getGenerateUrl(): string {
+  const model = readSettings().geminiModel || "gemini-2.0-flash";
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 }
 
 export async function uploadVideo(
@@ -76,7 +96,7 @@ export async function analyzeVideo(
   const key = getApiKey();
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const response = await fetch(`${GEMINI_GENERATE_URL}?key=${key}`, {
+    const response = await fetch(`${getGenerateUrl()}?key=${key}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -104,7 +124,7 @@ export async function analyzeVideo(
             (d: { "@type": string }) => d["@type"] === "type.googleapis.com/google.rpc.RetryInfo"
           );
           if (retryInfo?.retryDelay) {
-            retrySeconds = parseInt(retryInfo.retryDelay) + 5; // add 5s buffer
+            retrySeconds = parseRetryDelaySecs(retryInfo.retryDelay) + 5;
           }
         } catch { /* use default */ }
         await new Promise((r) => setTimeout(r, retrySeconds * 1000));

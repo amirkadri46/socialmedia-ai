@@ -1,38 +1,66 @@
 "use client";
 
-import { createContext, useContext, useState, useRef, useCallback } from "react";
-import type { PipelineProgress } from "@/lib/types";
+import { createContext, useContext, useState, useCallback } from "react";
+import { v4 as uuid } from "uuid";
+import type { PipelineProgress, PipelineParams } from "@/lib/types";
 
 interface PipelineContextValue {
-  running: boolean;
-  progress: PipelineProgress | null;
-  runPipeline: (params: { configName: string; maxVideos: number; topK: number; nDays: number }) => void;
+  pipelines: PipelineProgress[];
+  runPipeline: (params: PipelineParams) => void;
 }
 
 const PipelineContext = createContext<PipelineContextValue | null>(null);
 
 export function PipelineProvider({ children }: { children: React.ReactNode }) {
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState<PipelineProgress | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const [pipelines, setPipelines] = useState<PipelineProgress[]>([]);
 
-  const runPipeline = useCallback(async (params: { configName: string; maxVideos: number; topK: number; nDays: number }) => {
-    if (running) return;
-    setRunning(true);
-    setProgress(null);
+  const runPipeline = useCallback(async (params: PipelineParams) => {
+    const pipelineId = uuid();
 
-    abortRef.current = new AbortController();
+    const initial: PipelineProgress = {
+      pipelineId,
+      configName: params.configName,
+      status: "running",
+      phase: "scraping",
+      activeTasks: [],
+      creatorsCompleted: 0,
+      creatorsTotal: 0,
+      creatorsScraped: 0,
+      videosAnalyzed: 0,
+      videosTotal: 0,
+      errors: [],
+      log: [],
+    };
+
+    setPipelines((prev) => [...prev, initial]);
+
+    const setError = (msg: string) =>
+      setPipelines((prev) =>
+        prev.map((p) =>
+          p.pipelineId === pipelineId
+            ? { ...p, status: "error" as const, errors: [msg] }
+            : p
+        )
+      );
 
     try {
       const response = await fetch("/api/pipeline", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(params),
-        signal: abortRef.current.signal,
       });
 
+      if (!response.ok) {
+        const text = await response.text().catch(() => `HTTP ${response.status}`);
+        setError(text || `HTTP ${response.status}`);
+        return;
+      }
+
       const reader = response.body?.getReader();
-      if (!reader) return;
+      if (!reader) {
+        setError("No response body received from server");
+        return;
+      }
 
       const decoder = new TextDecoder();
       let buffer = "";
@@ -49,27 +77,26 @@ export function PipelineProvider({ children }: { children: React.ReactNode }) {
           if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6));
-              setProgress(data);
+              setPipelines((prev) =>
+                prev.map((p) =>
+                  p.pipelineId === pipelineId
+                    ? { ...data, pipelineId, configName: params.configName }
+                    : p
+                )
+              );
             } catch {
-              // skip
+              // skip malformed SSE lines
             }
           }
         }
       }
     } catch (err) {
-      if ((err as Error).name === "AbortError") return;
-      setProgress((prev) => ({
-        ...(prev || { phase: "done" as const, activeTasks: [], creatorsCompleted: 0, creatorsTotal: 0, creatorsScraped: 0, videosAnalyzed: 0, videosTotal: 0, log: [] }),
-        status: "error" as const,
-        errors: [err instanceof Error ? err.message : "Unknown error"],
-      }));
-    } finally {
-      setRunning(false);
+      setError(err instanceof Error ? err.message : "Unknown error");
     }
-  }, [running]);
+  }, []);
 
   return (
-    <PipelineContext.Provider value={{ running, progress, runPipeline }}>
+    <PipelineContext.Provider value={{ pipelines, runPipeline }}>
       {children}
     </PipelineContext.Provider>
   );

@@ -2,4 +2,16 @@ node_modules/
 .env
 .DS_Store
 outputs/
+
+# Runtime/secret data — lives on the Railway volume, never commit.
+# (configs.csv / creators.csv / videos.csv stay tracked as seed data.)
 data/settings.json
+data/social-accounts.json
+data/scheduled-posts.json
+data/clip-jobs.json
+data/clips.csv
+data/clips/
+data/clip-edits/
+data/clip-transcripts/
+data/outreach-lists.json
+data/outreach-templates.json

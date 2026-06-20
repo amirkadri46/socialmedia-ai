@@ -34,11 +34,11 @@ export default function RootLayout({
         <ThemeProvider>
           <TooltipProvider>
             <PipelineProvider>
-              <SidebarProvider>
+              <SidebarProvider style={{ "--sidebar-width": "58px" } as React.CSSProperties}>
                 <AppSidebar />
                 <main className="flex-1 overflow-auto min-h-screen">
                   <TopBar />
-                  <div className="mx-auto max-w-6xl px-6 py-8">{children}</div>
+                  <div className="px-6 py-8">{children}</div>
                 </main>
               </SidebarProvider>
             </PipelineProvider>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +13,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, Settings2, Sparkles, Search, Users, Film } from "lucide-react";
+import { Plus, Pencil, Trash2, Settings2, Sparkles, Search, Users, Film, GripVertical } from "lucide-react";
 import type { Config, Creator, Video } from "@/lib/types";
 
 const emptyConfig = {
@@ -31,6 +31,16 @@ export default function ConfigsPage() {
   const [editing, setEditing] = useState<Config | null>(null);
   const [form, setForm] = useState(emptyConfig);
 
+  // Resizable dialog state
+  const [dialogWidth, setDialogWidth] = useState(() => {
+    if (typeof window === "undefined") return 680;
+    return parseInt(localStorage.getItem("config-dialog-width") || "820", 10);
+  });
+  const isResizingRef = useRef(false);
+  const resizeDirRef = useRef<"left" | "right">("right");
+  const startXRef = useRef(0);
+  const startWidthRef = useRef(0);
+
   const loadConfigs = () => {
     fetch("/api/configs").then((r) => r.json()).then(setConfigs);
   };
@@ -40,6 +50,34 @@ export default function ConfigsPage() {
     fetch("/api/creators").then((r) => r.json()).then(setCreators);
     fetch("/api/videos").then((r) => r.json()).then(setVideos);
   }, []);
+
+  // Global mouse handlers for resize
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const delta = e.clientX - startXRef.current;
+      const sign = resizeDirRef.current === "right" ? 1 : -1;
+      const newWidth = Math.max(560, Math.min(window.innerWidth - 60, startWidthRef.current + sign * delta));
+      setDialogWidth(newWidth);
+      localStorage.setItem("config-dialog-width", String(Math.round(newWidth)));
+    };
+    const onMouseUp = () => { isResizingRef.current = false; };
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
+  const startResize = (e: React.MouseEvent, dir: "left" | "right") => {
+    isResizingRef.current = true;
+    resizeDirRef.current = dir;
+    startXRef.current = e.clientX;
+    startWidthRef.current = dialogWidth;
+    e.preventDefault();
+    e.stopPropagation();
+  };
 
   const openNew = () => {
     setEditing(null);
@@ -83,7 +121,7 @@ export default function ConfigsPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="max-w-6xl mx-auto space-y-8">
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Configs</h1>
@@ -98,61 +136,96 @@ export default function ConfigsPage() {
               New Config
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto glass-strong rounded-2xl border-white/[0.08]">
-            <DialogHeader>
-              <DialogTitle>{editing ? "Edit Config" : "New Config"}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-5 pt-2">
-              <div>
-                <Label className="text-xs text-muted-foreground">Config Name</Label>
-                <Input
-                  value={form.configName}
-                  onChange={(e) => setForm({ ...form, configName: e.target.value })}
-                  placeholder="e.g. Real Estate Videos for Anja"
-                  className="mt-1.5 rounded-xl glass border-white/[0.08] h-11"
-                />
+
+          <DialogContent
+            className="glass-strong rounded-2xl border-white/[0.08] p-0 overflow-hidden"
+            style={{ width: dialogWidth, maxWidth: "95vw", maxHeight: "90vh" }}
+          >
+            {/* Left resize handle */}
+            <div
+              className="absolute left-0 top-0 h-full w-2 cursor-ew-resize z-50 group/handle"
+              onMouseDown={(e) => startResize(e, "left")}
+            >
+              <div className="h-full w-full opacity-0 group-hover/handle:opacity-100 bg-purple-500/20 transition-opacity" />
+            </div>
+
+            {/* Right resize handle */}
+            <div
+              className="absolute right-0 top-0 h-full w-2 cursor-ew-resize z-50 group/handle"
+              onMouseDown={(e) => startResize(e, "right")}
+            >
+              <div className="h-full w-full opacity-0 group-hover/handle:opacity-100 bg-purple-500/20 transition-opacity" />
+            </div>
+
+            {/* Resize width indicator */}
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 pointer-events-none z-40">
+              <GripVertical className="h-3 w-3 text-muted-foreground/30 rotate-90" />
+            </div>
+
+            {/* Scrollable inner content */}
+            <div className="overflow-y-auto" style={{ maxHeight: "90vh" }}>
+              <div className="p-6">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    {editing ? "Edit Config" : "New Config"}
+                    <span className="text-[10px] text-muted-foreground/50 font-normal ml-auto mr-6">
+                      ← drag edges to resize →
+                    </span>
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-5 pt-4">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Config Name</Label>
+                    <Input
+                      value={form.configName}
+                      onChange={(e) => setForm({ ...form, configName: e.target.value })}
+                      placeholder="e.g. Real Estate Videos for Anja"
+                      className="mt-1.5 rounded-xl glass border-white/[0.08] h-11"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Creators Category</Label>
+                    <Input
+                      value={form.creatorsCategory}
+                      onChange={(e) => setForm({ ...form, creatorsCategory: e.target.value })}
+                      placeholder="e.g. dubai-real-estate"
+                      className="mt-1.5 rounded-xl glass border-white/[0.08] h-11"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <Search className="h-3 w-3 text-purple-400" />
+                      Analysis Instruction (Gemini prompt)
+                    </Label>
+                    <Textarea
+                      value={form.analysisInstruction}
+                      onChange={(e) => setForm({ ...form, analysisInstruction: e.target.value })}
+                      placeholder="Prompt that tells Gemini how to analyze the video..."
+                      rows={10}
+                      className="mt-1.5 rounded-xl glass border-white/[0.08] font-mono text-xs leading-relaxed"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <Sparkles className="h-3 w-3 text-indigo-400" />
+                      New Concepts Instruction (OpenRouter prompt)
+                    </Label>
+                    <Textarea
+                      value={form.newConceptsInstruction}
+                      onChange={(e) => setForm({ ...form, newConceptsInstruction: e.target.value })}
+                      placeholder="Prompt that tells Claude how to generate new concepts..."
+                      rows={10}
+                      className="mt-1.5 rounded-xl glass border-white/[0.08] font-mono text-xs leading-relaxed"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleSave}
+                    className="w-full rounded-xl h-11 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 border-0"
+                  >
+                    {editing ? "Save Changes" : "Create Config"}
+                  </Button>
+                </div>
               </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">Creators Category</Label>
-                <Input
-                  value={form.creatorsCategory}
-                  onChange={(e) => setForm({ ...form, creatorsCategory: e.target.value })}
-                  placeholder="e.g. dubai-real-estate"
-                  className="mt-1.5 rounded-xl glass border-white/[0.08] h-11"
-                />
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Search className="h-3 w-3 text-purple-400" />
-                  Analysis Instruction (Gemini prompt)
-                </Label>
-                <Textarea
-                  value={form.analysisInstruction}
-                  onChange={(e) => setForm({ ...form, analysisInstruction: e.target.value })}
-                  placeholder="Prompt that tells Gemini how to analyze the video..."
-                  rows={10}
-                  className="mt-1.5 rounded-xl glass border-white/[0.08] font-mono text-xs leading-relaxed"
-                />
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Sparkles className="h-3 w-3 text-indigo-400" />
-                  New Concepts Instruction (OpenRouter prompt)
-                </Label>
-                <Textarea
-                  value={form.newConceptsInstruction}
-                  onChange={(e) => setForm({ ...form, newConceptsInstruction: e.target.value })}
-                  placeholder="Prompt that tells Claude how to generate new concepts..."
-                  rows={10}
-                  className="mt-1.5 rounded-xl glass border-white/[0.08] font-mono text-xs leading-relaxed"
-                />
-              </div>
-              <Button
-                onClick={handleSave}
-                className="w-full rounded-xl h-11 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 border-0"
-              >
-                {editing ? "Save Changes" : "Create Config"}
-              </Button>
             </div>
           </DialogContent>
         </Dialog>

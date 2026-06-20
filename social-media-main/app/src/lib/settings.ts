@@ -9,6 +9,22 @@ export interface AppSettings {
   openaiApiKey: string;
   openrouterApiKey: string;
   openrouterModel: string;
+  geminiModel: string;
+  // Outreach settings
+  apifyApiToken: string;
+  linkedinCharLimit: number;
+  emailLengthGuidance: string;
+  // Clipping
+  transcriptionProvider: "deepgram" | "assemblyai" | "local";
+  deepgramApiKey: string;
+  assemblyaiApiKey: string;
+  defaultCaptionPreset: string;
+  defaultAspectRatio: string;
+  defaultClipLength: string;
+  // Social
+  metaAppId: string;
+  metaAppSecret: string;
+  enableSocialPublish: boolean;
 }
 
 const DEFAULTS: AppSettings = {
@@ -16,6 +32,21 @@ const DEFAULTS: AppSettings = {
   openaiApiKey: "",
   openrouterApiKey: "",
   openrouterModel: "deepseek/deepseek-v4-flash",
+  geminiModel: "gemini-2.5-flash",
+  apifyApiToken: "",
+  linkedinCharLimit: 200,
+  emailLengthGuidance: "Aim for 80–130 words. Conversational and direct. No self-introduction opener.",
+  // Clipping
+  transcriptionProvider: "deepgram",
+  deepgramApiKey: "",
+  assemblyaiApiKey: "",
+  defaultCaptionPreset: "Karaoke",
+  defaultAspectRatio: "9:16",
+  defaultClipLength: "Auto (0-3m)",
+  // Social
+  metaAppId: "",
+  metaAppSecret: "",
+  enableSocialPublish: false,
 };
 
 export function readSettings(): AppSettings {
