@@ -2,11 +2,15 @@
 FROM node:20-slim
 
 # System deps for the clipping pipeline:
-#   ffmpeg   — yt-dlp post-processing / muxing (rendering uses bundled ffmpeg-static)
-#   python3  — runtime for the yt-dlp standalone binary
-#   curl/ca  — to fetch yt-dlp during build
+#   ffmpeg            — yt-dlp post-processing / muxing (rendering uses bundled ffmpeg-static)
+#   python3           — runtime for the yt-dlp standalone binary
+#   curl/ca           — to fetch yt-dlp during build
+#   fontconfig+fonts  — REQUIRED for libass caption burning. fonts-liberation provides
+#                       Liberation Sans, which fontconfig aliases to "Arial" (the font all
+#                       caption presets use). Without fonts, every render fails on a slim image.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg python3 curl ca-certificates \
+     fontconfig fonts-liberation fonts-dejavu-core \
   && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
   && chmod a+rx /usr/local/bin/yt-dlp \
   && rm -rf /var/lib/apt/lists/*

@@ -3,11 +3,27 @@ import { downloadVideo, saveUpload } from "./download";
 import { transcribe, wordsToText } from "./transcribe";
 import { selectMoments, clipLengthRange } from "./moments";
 import { renderClip } from "./render";
-import { upsertJob, appendClips, writeTranscript } from "./store";
+import {
+  upsertJob,
+  appendClips,
+  writeTranscript,
+  setLiveProgress,
+  clearLiveProgress,
+  isCancelRequested,
+  clearCancel,
+} from "./store";
 import type { ClipJob, ClipProgress, Clip, Moment, Word } from "../types";
 import { readSettings } from "../settings";
 
 const RENDER_CONCURRENCY = 2;
+
+/** Thrown internally when a job is canceled so the pipeline unwinds cleanly. */
+class CanceledError extends Error {
+  constructor() {
+    super("Job canceled by user.");
+    this.name = "CanceledError";
+  }
+}
 
 // Map the UI language label to a Deepgram/AssemblyAI language code.
 const LANGUAGE_CODES: Record<string, string> = {
@@ -73,7 +89,13 @@ export async function runClipPipeline(
     errors: [],
   };
 
-  const emit = () => onProgress({ ...progress, log: [...progress.log], errors: [...progress.errors] });
+  const emit = () => {
+    const snapshot = { ...progress, log: [...progress.log], errors: [...progress.errors] };
+    // Persist live progress so a client that navigated away can re-attach and keep
+    // watching — the pipeline runs detached from any single HTTP request.
+    setLiveProgress(job.id, snapshot);
+    onProgress(snapshot);
+  };
   const log = (msg: string) => {
     progress.log.push(`${msg}`);
     emit();
@@ -85,12 +107,17 @@ export async function runClipPipeline(
     upsertJob(job);
     emit();
   };
+  // Cancellation is the only thing that stops a running job. Checked between steps.
+  const checkCancel = () => {
+    if (isCancelRequested(job.id)) throw new CanceledError();
+  };
 
   try {
     upsertJob(job);
     const { min, max } = clipLengthRange(job.clipLengthMode);
 
     // 1. Ingest ──────────────────────────────────────────────────────────────────
+    checkCancel();
     setStatus("downloading", 5);
     log(`Fetching video "${job.sourceTitle}"`);
     log(`Curation method: ${job.clipModel}...`);
@@ -121,6 +148,7 @@ export async function runClipPipeline(
     log(`Estimated waiting time: ~${Math.ceil((progress.etaSeconds || 60) / 60)}min`);
 
     // 2. Transcribe ────────────────────────────────────────────────────────────────
+    checkCancel();
     setStatus("transcribing", 25);
     log("Transcribing audio...");
     const langCode = languageCode(job.speechLanguage);
@@ -129,6 +157,7 @@ export async function runClipPipeline(
     log(`Transcribed ${words.length} words.`);
 
     // 3. Select moments ──────────────────────────────────────────────────────────────
+    checkCancel();
     setStatus("selecting", 40);
     log("Processing & analyzing... finding the most viral moments");
     const moments: Moment[] = await selectMoments(words, job);
@@ -142,6 +171,7 @@ export async function runClipPipeline(
 
     await runWithConcurrency(moments, RENDER_CONCURRENCY, async (moment, i) => {
       try {
+        checkCancel();
         const clipId = uuid();
         const { filePath, thumbnail } = await renderClip(
           sourcePath,
@@ -176,12 +206,16 @@ export async function runClipPipeline(
         progress.percent = 50 + Math.round((produced.length / moments.length) * 50);
         log(`Rendered clip ${produced.length}/${moments.length}: ${moment.title} (${moment.score})`);
       } catch (err) {
+        if (err instanceof CanceledError) throw err; // propagate; don't swallow as a render error
         const msg = `Render error for "${moment.title}": ${err instanceof Error ? err.message : err}`;
         progress.errors.push(msg);
         log(msg);
       }
     });
 
+    // The per-clip render failures are already collected in progress.errors and get
+    // persisted to job.errors by the catch below, so the results page shows the real
+    // cause (ffmpeg stderr, missing fonts, etc.) — not just this summary line.
     if (produced.length === 0) throw new Error("No clips were rendered successfully.");
 
     // Persist clips sorted by score (highest rank = 1).
@@ -193,10 +227,23 @@ export async function runClipPipeline(
     setStatus("done", 100);
     log(`Done — ${produced.length} clips ready.`);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
-    progress.errors.push(msg);
-    job.errors = [...(job.errors || []), msg];
-    setStatus("error", progress.percent);
-    log(`Error: ${msg}`);
+    if (err instanceof CanceledError) {
+      setStatus("canceled", progress.percent);
+      log("Canceled by user.");
+    } else {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      progress.errors.push(msg);
+      // Persist every collected error (including per-clip render failures), not just
+      // the top-level message, so the results page shows the real cause.
+      job.errors = [...new Set([...(job.errors || []), ...progress.errors])];
+      setStatus("error", progress.percent);
+      log(`Error: ${msg}`);
+    }
+  } finally {
+    // Job has reached a terminal state — release the cancel flag and drop the live
+    // progress snapshot after a short grace period so reconnecting clients can read
+    // the final state once before it's cleared.
+    clearCancel(job.id);
+    setTimeout(() => clearLiveProgress(job.id), 30_000);
   }
 }
