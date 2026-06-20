@@ -132,9 +132,12 @@ export default function NewClipPage() {
   // True when we re-attached to a job that was started before this mount (e.g. after
   // navigating away and back) — drives polling instead of the live SSE stream.
   const [reconnecting, setReconnecting] = useState(false);
+  // Gates the draft-persist effect until the saved draft has been read AND applied to
+  // state — otherwise the persist effect's first run would write default values back
+  // over the draft we just restored.
+  const [restored, setRestored] = useState(false);
 
   const mountedRef = useRef(true);
-  const restoredRef = useRef(false);
   const runAbortRef = useRef<AbortController | null>(null);
 
   // For uploads, duration is probed server-side, so it stays 0 here (timeframe slider hidden).
@@ -181,20 +184,43 @@ export default function NewClipPage() {
       /* ignore */
     }
     if (jobId) {
-      setActiveJobId(jobId);
-      setRunning(true);
-      setReconnecting(true);
-      setProgress({
-        jobId,
-        status: "downloading",
-        percent: 0,
-        momentsTotal: 0,
-        clipsRendered: 0,
-        log: ["Reconnecting to your job…"],
-        errors: [],
-      });
+      // Only re-attach if the job is still running. A terminal job left a stale key
+      // (e.g. after "Run in background" or closing the tab) — clear it and show a fresh
+      // form rather than yanking the user into an old job's results.
+      (async () => {
+        try {
+          const res = await fetch(`/api/clip/${jobId}`);
+          if (!res.ok) {
+            clearActiveJob();
+            return;
+          }
+          const data = await res.json();
+          const status: string | undefined = data?.job?.status;
+          if (!status || TERMINAL_STATUSES.has(status)) {
+            clearActiveJob();
+            return;
+          }
+          if (!mountedRef.current) return;
+          setActiveJobId(jobId);
+          setReconnecting(true);
+          setRunning(true);
+          setProgress(
+            (data.progress as ClipProgress | null) ?? {
+              jobId,
+              status: "downloading",
+              percent: 0,
+              momentsTotal: 0,
+              clipsRendered: 0,
+              log: ["Reconnecting to your job…"],
+              errors: [],
+            }
+          );
+        } catch {
+          /* network hiccup — leave the key so a later visit can retry */
+        }
+      })();
     }
-    restoredRef.current = true;
+    setRestored(true);
 
     return () => {
       mountedRef.current = false;
@@ -204,7 +230,7 @@ export default function NewClipPage() {
 
   // ── Persist the form draft so navigating away never loses fetched video/config ──
   useEffect(() => {
-    if (!restoredRef.current) return; // don't clobber the saved draft before restore runs
+    if (!restored) return; // don't clobber the saved draft before restore applies
     const draft = {
       url,
       meta: uploadFile ? null : meta, // uploaded File can't be serialized; URL preview can
@@ -227,7 +253,7 @@ export default function NewClipPage() {
       /* sessionStorage unavailable / quota */
     }
   }, [
-    url, meta, uploadFile, clipModel, genre, clipLengthMode, autoHook,
+    restored, url, meta, uploadFile, clipModel, genre, clipLengthMode, autoHook,
     captionPreset, aspectRatio, speechLanguage, includeMomentsPrompt,
     topK, rangeStart, rangeEnd, dontClip,
   ]);
@@ -386,6 +412,7 @@ export default function NewClipPage() {
       if (!reader) throw new Error("No response stream.");
       const decoder = new TextDecoder();
       let buffer = "";
+      let lastStatus = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -397,6 +424,7 @@ export default function NewClipPage() {
           if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6)) as ClipProgress;
+              lastStatus = data.status;
               if (mountedRef.current) setProgress(data);
               if (TERMINAL_STATUSES.has(data.status)) {
                 clearActiveJob();
@@ -419,8 +447,8 @@ export default function NewClipPage() {
         }
       }
       // Stream ended without a terminal event (e.g. server timeout) — the job may still
-      // be running. Hand off to results which keeps polling.
-      if (mountedRef.current && progress?.status === "done") {
+      // be running server-side. Hand off to the results page, which keeps polling.
+      if (mountedRef.current && !controller.signal.aborted && !TERMINAL_STATUSES.has(lastStatus)) {
         router.push(`/clip/${jobId}`);
       }
     } catch (e) {
@@ -455,6 +483,10 @@ export default function NewClipPage() {
   function handleRunInBackground() {
     runAbortRef.current?.abort(); // stop streaming to this tab; server job continues
     const id = activeJobId || progress?.jobId;
+    // The results page tracks the job by id on its own, so the reconnect key isn't
+    // needed once we hand off — clearing it avoids re-attaching to this (finished) job
+    // the next time the user opens New Clip.
+    clearActiveJob();
     if (id) {
       router.push(`/clip/${id}`); // results page keeps polling + shows progress
     } else {
