@@ -70,9 +70,19 @@ export function run(
         )
       );
     });
-    proc.on("close", (code) => {
+    proc.on("close", (code, signal) => {
       if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error(`${path.basename(bin)} exited ${code}: ${stderr.slice(-800)}`));
+      else if (code === null) {
+        // A null exit code means the process was terminated by a signal rather than
+        // exiting on its own — on a memory-constrained host this is almost always the
+        // OOM killer (SIGKILL). Give an actionable message instead of the raw banner.
+        reject(
+          new Error(
+            `${path.basename(bin)} was killed (signal ${signal ?? "unknown"}) — likely out of memory. ` +
+              `Try fewer concurrent renders (CLIP_RENDER_CONCURRENCY=1) or more container memory.`
+          )
+        );
+      } else reject(new Error(`${path.basename(bin)} exited ${code}: ${stderr.slice(-800)}`));
     });
   });
 }

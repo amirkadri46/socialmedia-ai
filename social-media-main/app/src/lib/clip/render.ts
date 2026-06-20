@@ -61,6 +61,9 @@ export async function renderClip(
       "-ss", moment.start.toFixed(3),
       "-i", sourcePath,
       "-t", duration.toFixed(3),
+      // Cap encoder threads: libx264's frame-thread buffers are the main per-render
+      // memory cost, and uncapped threads on a small container can OOM-kill ffmpeg.
+      "-threads", process.env.CLIP_FFMPEG_THREADS || "2",
       "-vf", filters.join(","),
       "-c:v", "libx264",
       "-preset", "veryfast",

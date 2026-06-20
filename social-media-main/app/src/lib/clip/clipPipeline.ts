@@ -15,7 +15,11 @@ import {
 import type { ClipJob, ClipProgress, Clip, Moment, Word } from "../types";
 import { readSettings } from "../settings";
 
-const RENDER_CONCURRENCY = 2;
+// Render one clip at a time by default: two concurrent libx264 encodes plus the
+// Next.js server can exceed the memory of a small container (e.g. Railway), which
+// gets ffmpeg SIGKILLed mid-encode (surfaces as "ffmpeg exited null"). Bump this
+// via CLIP_RENDER_CONCURRENCY on a host with more RAM.
+const RENDER_CONCURRENCY = Math.max(1, parseInt(process.env.CLIP_RENDER_CONCURRENCY || "1", 10) || 1);
 
 /** Thrown internally when a job is canceled so the pipeline unwinds cleanly. */
 class CanceledError extends Error {
