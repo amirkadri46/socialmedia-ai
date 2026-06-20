@@ -144,7 +144,8 @@ export type ClipJobStatus =
   | "selecting"
   | "rendering"
   | "done"
-  | "error";
+  | "error"
+  | "canceled";
 
 export interface ClipJob {
   id: string;

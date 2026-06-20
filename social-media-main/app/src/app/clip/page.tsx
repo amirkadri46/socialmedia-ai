@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,6 +44,13 @@ const CLIP_LENGTHS = ["Auto (0-3m)", "<30s", "30s-60s", "60s-90s"];
 const LANGUAGES = ["English", "Spanish", "French", "German", "Portuguese", "Hindi"];
 const ASPECT_RATIOS = ["9:16", "1:1", "16:9"];
 
+// Background-safe clipping: the New Clip form + any running job survive navigation.
+// Form/preview state is cached in sessionStorage; the active job id lets us re-attach
+// to a pipeline that keeps running server-side. A job only stops when the user cancels.
+const DRAFT_KEY = "clip:newClipDraft";
+const ACTIVE_JOB_KEY = "clip:activeJobId";
+const TERMINAL_STATUSES = new Set(["done", "error", "canceled"]);
+
 interface SourceMeta {
   title: string;
   durationSec: number;
@@ -52,6 +59,19 @@ interface SourceMeta {
   height: number;
 }
 
+// Coarse percent when only a persisted job status is available (no live progress —
+// e.g. after a server restart). Live progress from the store is preferred when present.
+const STATUS_PERCENT: Record<string, number> = {
+  idle: 0,
+  downloading: 12,
+  transcribing: 30,
+  selecting: 45,
+  rendering: 70,
+  done: 100,
+  error: 0,
+  canceled: 0,
+};
+
 function fmtClock(sec: number): string {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
@@ -59,6 +79,25 @@ function fmtClock(sec: number): string {
   return h > 0
     ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
     : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** Build a minimal progress snapshot from a persisted job when no live progress exists. */
+function synthProgress(job: {
+  id: string;
+  status: string;
+  sourceTitle?: string;
+  errors?: string[];
+}): ClipProgress {
+  return {
+    jobId: job.id,
+    status: job.status as ClipProgress["status"],
+    sourceTitle: job.sourceTitle,
+    percent: STATUS_PERCENT[job.status] ?? 0,
+    momentsTotal: 0,
+    clipsRendered: 0,
+    log: [],
+    errors: job.errors ?? [],
+  };
 }
 
 export default function NewClipPage() {
@@ -89,9 +128,156 @@ export default function NewClipPage() {
   // ── Processing state ──────────────────────────────────────────────────────────
   const [progress, setProgress] = useState<ClipProgress | null>(null);
   const [running, setRunning] = useState(false);
+  const [activeJobId, setActiveJobId] = useState("");
+  // True when we re-attached to a job that was started before this mount (e.g. after
+  // navigating away and back) — drives polling instead of the live SSE stream.
+  const [reconnecting, setReconnecting] = useState(false);
+
+  const mountedRef = useRef(true);
+  const restoredRef = useRef(false);
+  const runAbortRef = useRef<AbortController | null>(null);
 
   // For uploads, duration is probed server-side, so it stays 0 here (timeframe slider hidden).
   const durationSec = meta?.durationSec || 0;
+
+  const clearActiveJob = () => {
+    try {
+      sessionStorage.removeItem(ACTIVE_JOB_KEY);
+    } catch {
+      /* sessionStorage unavailable */
+    }
+  };
+
+  // ── Restore form + reconnect to any running job (once, on mount) ────────────────
+  useEffect(() => {
+    mountedRef.current = true;
+    try {
+      const raw = sessionStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d.url) setUrl(d.url);
+        if (d.meta) setMeta(d.meta);
+        if (d.clipModel) setClipModel(d.clipModel);
+        if (d.genre) setGenre(d.genre);
+        if (d.clipLengthMode) setClipLengthMode(d.clipLengthMode);
+        if (typeof d.autoHook === "boolean") setAutoHook(d.autoHook);
+        if (d.captionPreset) setCaptionPreset(d.captionPreset);
+        if (d.aspectRatio) setAspectRatio(d.aspectRatio);
+        if (d.speechLanguage) setSpeechLanguage(d.speechLanguage);
+        if (typeof d.includeMomentsPrompt === "string") setIncludeMomentsPrompt(d.includeMomentsPrompt);
+        if (typeof d.topK === "number") setTopK(d.topK);
+        if (typeof d.rangeStart === "number") setRangeStart(d.rangeStart);
+        if (typeof d.rangeEnd === "number") setRangeEnd(d.rangeEnd);
+        if (typeof d.dontClip === "boolean") setDontClip(d.dontClip);
+      }
+    } catch {
+      /* ignore malformed draft */
+    }
+
+    let jobId = "";
+    try {
+      jobId = sessionStorage.getItem(ACTIVE_JOB_KEY) || "";
+    } catch {
+      /* ignore */
+    }
+    if (jobId) {
+      setActiveJobId(jobId);
+      setRunning(true);
+      setReconnecting(true);
+      setProgress({
+        jobId,
+        status: "downloading",
+        percent: 0,
+        momentsTotal: 0,
+        clipsRendered: 0,
+        log: ["Reconnecting to your job…"],
+        errors: [],
+      });
+    }
+    restoredRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      runAbortRef.current?.abort();
+    };
+  }, []);
+
+  // ── Persist the form draft so navigating away never loses fetched video/config ──
+  useEffect(() => {
+    if (!restoredRef.current) return; // don't clobber the saved draft before restore runs
+    const draft = {
+      url,
+      meta: uploadFile ? null : meta, // uploaded File can't be serialized; URL preview can
+      clipModel,
+      genre,
+      clipLengthMode,
+      autoHook,
+      captionPreset,
+      aspectRatio,
+      speechLanguage,
+      includeMomentsPrompt,
+      topK,
+      rangeStart,
+      rangeEnd,
+      dontClip,
+    };
+    try {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    } catch {
+      /* sessionStorage unavailable / quota */
+    }
+  }, [
+    url, meta, uploadFile, clipModel, genre, clipLengthMode, autoHook,
+    captionPreset, aspectRatio, speechLanguage, includeMomentsPrompt,
+    topK, rangeStart, rangeEnd, dontClip,
+  ]);
+
+  // ── Reconnect: poll a running job we re-attached to (no live SSE in this tab) ────
+  useEffect(() => {
+    if (!reconnecting || !activeJobId) return;
+    let stopped = false;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/clip/${activeJobId}`);
+        if (!res.ok) {
+          // Job record gone — nothing to watch.
+          if (!stopped && mountedRef.current) {
+            setReconnecting(false);
+            setRunning(false);
+            clearActiveJob();
+          }
+          return;
+        }
+        const data = await res.json();
+        const job = data.job as { id: string; status: string; sourceTitle?: string; errors?: string[] };
+        const live = (data.progress as ClipProgress | null) ?? synthProgress(job);
+        if (!mountedRef.current) return;
+        setProgress(live);
+
+        if (TERMINAL_STATUSES.has(job.status)) {
+          stopped = true;
+          clearActiveJob();
+          if (job.status === "done") {
+            router.push(`/clip/${activeJobId}`);
+          } else {
+            setReconnecting(false);
+            setRunning(false);
+            if (job.status === "error") setError((job.errors ?? [])[0] || "Processing failed.");
+          }
+        }
+      } catch {
+        /* transient network error — keep polling */
+      }
+    };
+
+    poll();
+    const t = setInterval(poll, 2500);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
+  }, [reconnecting, activeJobId, router]);
 
   async function handleInspect() {
     if (!/^https?:\/\//.test(url)) {
@@ -126,8 +312,9 @@ export default function NewClipPage() {
     setError("");
   }
 
-  function buildJobPayload() {
+  function buildJobPayload(jobId: string) {
     return {
+      id: jobId,
       sourceUrl: uploadFile ? undefined : url,
       sourceTitle: meta?.title || "Untitled video",
       sourceDurationSec: durationSec,
@@ -147,10 +334,25 @@ export default function NewClipPage() {
   }
 
   async function handleRun() {
+    // Generate the job id up front so we can persist it immediately — the pipeline runs
+    // detached server-side, so even if this tab navigates away the job keeps going and
+    // we can re-attach on return.
+    const jobId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setActiveJobId(jobId);
+    setReconnecting(false);
+    try {
+      sessionStorage.setItem(ACTIVE_JOB_KEY, jobId);
+    } catch {
+      /* sessionStorage unavailable */
+    }
+
     setRunning(true);
     setError("");
     setProgress({
-      jobId: "",
+      jobId,
       status: "downloading",
       sourceTitle: meta?.title,
       percent: 0,
@@ -160,19 +362,23 @@ export default function NewClipPage() {
       errors: [],
     });
 
+    const controller = new AbortController();
+    runAbortRef.current = controller;
+
     try {
       let res: Response;
-      const job = buildJobPayload();
+      const job = buildJobPayload(jobId);
       if (uploadFile) {
         const form = new FormData();
         form.append("job", JSON.stringify(job));
         form.append("file", uploadFile);
-        res = await fetch("/api/clip", { method: "POST", body: form });
+        res = await fetch("/api/clip", { method: "POST", body: form, signal: controller.signal });
       } else {
         res = await fetch("/api/clip", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(job),
+          signal: controller.signal,
         });
       }
 
@@ -180,7 +386,6 @@ export default function NewClipPage() {
       if (!reader) throw new Error("No response stream.");
       const decoder = new TextDecoder();
       let buffer = "";
-      let lastJobId = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -192,21 +397,67 @@ export default function NewClipPage() {
           if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6)) as ClipProgress;
-              setProgress(data);
-              if (data.jobId) lastJobId = data.jobId;
-              if (data.status === "done" && data.jobId) {
-                router.push(`/clip/${data.jobId}`);
-                return;
+              if (mountedRef.current) setProgress(data);
+              if (TERMINAL_STATUSES.has(data.status)) {
+                clearActiveJob();
+                if (data.status === "done" && data.jobId && mountedRef.current) {
+                  router.push(`/clip/${data.jobId}`);
+                  return;
+                }
+                if (data.status === "error" && mountedRef.current) {
+                  setError((data.errors ?? [])[0] || "Pipeline failed.");
+                  setRunning(false);
+                }
+                if (data.status === "canceled" && mountedRef.current) {
+                  setRunning(false);
+                }
               }
             } catch {
-              /* skip */
+              /* skip non-JSON keepalive lines */
             }
           }
         }
       }
-      if (lastJobId) router.push(`/clip/${lastJobId}`);
+      // Stream ended without a terminal event (e.g. server timeout) — the job may still
+      // be running. Hand off to results which keeps polling.
+      if (mountedRef.current && progress?.status === "done") {
+        router.push(`/clip/${jobId}`);
+      }
     } catch (e) {
+      // An abort means this tab navigated away; the server job keeps running and we'll
+      // re-attach on return, so don't surface it as an error or clear the active job.
+      if (controller.signal.aborted || !mountedRef.current) return;
       setError(e instanceof Error ? e.message : "Pipeline failed.");
+      setRunning(false);
+      clearActiveJob();
+    }
+  }
+
+  /** Explicitly cancel the running job — the only thing that stops it. */
+  async function handleCancel() {
+    const id = activeJobId || progress?.jobId;
+    if (!id) {
+      setRunning(false);
+      return;
+    }
+    try {
+      await fetch(`/api/clip/${id}/cancel`, { method: "POST" });
+    } catch {
+      /* best-effort; the pipeline checks the flag at its next step */
+    }
+    runAbortRef.current?.abort();
+    clearActiveJob();
+    setReconnecting(false);
+    setRunning(false);
+  }
+
+  /** Close the modal but let the job keep running in the background. */
+  function handleRunInBackground() {
+    runAbortRef.current?.abort(); // stop streaming to this tab; server job continues
+    const id = activeJobId || progress?.jobId;
+    if (id) {
+      router.push(`/clip/${id}`); // results page keeps polling + shows progress
+    } else {
       setRunning(false);
     }
   }
@@ -436,11 +687,9 @@ export default function NewClipPage() {
       {running && progress && (
         <ProcessingModal
           progress={progress}
-          onClose={() => {
-            // Pipeline persists server-side; jump to results which polls.
-            if (progress.jobId) router.push(`/clip/${progress.jobId}`);
-            else setRunning(false);
-          }}
+          reconnecting={reconnecting}
+          onRunInBackground={handleRunInBackground}
+          onCancel={handleCancel}
         />
       )}
     </div>
@@ -485,19 +734,26 @@ function PickSelect({
 
 function ProcessingModal({
   progress,
-  onClose,
+  reconnecting,
+  onRunInBackground,
+  onCancel,
 }: {
   progress: ClipProgress;
-  onClose: () => void;
+  reconnecting: boolean;
+  onRunInBackground: () => void;
+  onCancel: () => void;
 }) {
   const etaMin = progress.etaSeconds ? Math.ceil(progress.etaSeconds / 60) : null;
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
+    // Keep the job running in the background when the modal is dismissed (no auto-cancel).
+    <Dialog open onOpenChange={(o) => !o && onRunInBackground()}>
       <DialogContent className="max-w-xl" showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>Your video is processing</DialogTitle>
+          <DialogTitle>
+            {reconnecting ? "Reconnected to your processing job" : "Your video is processing"}
+          </DialogTitle>
           <DialogDescription>
-            You&apos;ll land on the results when it&apos;s done — or close to let it run in the background.
+            This keeps running in the background even if you leave — it only stops if you cancel.
           </DialogDescription>
         </DialogHeader>
 
@@ -511,7 +767,9 @@ function ProcessingModal({
           <p className="text-primary font-medium">
             {progress.status === "done"
               ? "Done!"
-              : `Processing & analyzing… ${progress.percent}%`}
+              : progress.status === "canceled"
+                ? "Canceled."
+                : `Processing & analyzing… ${progress.percent}%`}
           </p>
           {progress.log.slice(-6).map((l, i) => (
             <p key={i} className="text-muted-foreground/70 text-xs">{l}</p>
@@ -523,9 +781,12 @@ function ProcessingModal({
 
         <Progress value={progress.percent} />
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Close
+        <DialogFooter className="gap-2 sm:justify-between">
+          <Button variant="ghost" onClick={onCancel} className="text-destructive hover:text-destructive">
+            Cancel job
+          </Button>
+          <Button variant="outline" onClick={onRunInBackground}>
+            Run in background
           </Button>
         </DialogFooter>
       </DialogContent>

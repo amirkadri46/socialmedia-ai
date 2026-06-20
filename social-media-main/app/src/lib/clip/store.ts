@@ -10,6 +10,7 @@ import type {
   Word,
   ClipEdit,
   CaptionTemplate,
+  ClipProgress,
 } from "../types";
 import { presetToCaptionConfig } from "./caption-styles";
 
@@ -68,6 +69,39 @@ export function upsertJob(job: ClipJob): void {
 
 export function getJob(jobId: string): ClipJob | undefined {
   return readJobs().find((j) => j.id === jobId);
+}
+
+// ── Live progress + cancellation (in-memory, process-scoped) ──────────────────────
+// A running pipeline is detached from the HTTP request, so its live progress (percent,
+// logs, ETA) lives here for the life of the process — letting a client that navigated
+// away and came back re-attach and keep watching. Cancellation is the ONLY thing that
+// stops a job: the pipeline polls isCancelRequested() between steps.
+
+const progressByJob = new Map<string, ClipProgress>();
+const cancelRequested = new Set<string>();
+
+export function setLiveProgress(jobId: string, progress: ClipProgress): void {
+  progressByJob.set(jobId, progress);
+}
+
+export function getLiveProgress(jobId: string): ClipProgress | undefined {
+  return progressByJob.get(jobId);
+}
+
+export function clearLiveProgress(jobId: string): void {
+  progressByJob.delete(jobId);
+}
+
+export function requestCancel(jobId: string): void {
+  cancelRequested.add(jobId);
+}
+
+export function isCancelRequested(jobId: string): boolean {
+  return cancelRequested.has(jobId);
+}
+
+export function clearCancel(jobId: string): void {
+  cancelRequested.delete(jobId);
 }
 
 // ── Clips (CSV, mirroring lib/csv.ts videos handling) ─────────────────────────────

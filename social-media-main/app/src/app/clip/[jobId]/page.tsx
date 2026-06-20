@@ -122,6 +122,23 @@ export default function JobResultsPage() {
         </div>
       )}
 
+      {/* Canceled banner */}
+      {job.status === "canceled" && (
+        <div className="flex items-center justify-between gap-4 rounded-xl border bg-muted/40 px-5 py-4">
+          <div>
+            <p className="text-sm font-medium">Job canceled</p>
+            <p className="text-xs text-muted-foreground">
+              You stopped this job{clips.length > 0 ? " — any clips finished before that are below." : "."}
+            </p>
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/clip">
+              <Scissors className="h-4 w-4" /> New Clip
+            </Link>
+          </Button>
+        </div>
+      )}
+
       {/* Auto-hook info banner */}
       {job.autoHook && clips.length > 0 && !hookDismissed && (
         <div className="flex items-start justify-between gap-4 rounded-xl border bg-card px-5 py-4">
