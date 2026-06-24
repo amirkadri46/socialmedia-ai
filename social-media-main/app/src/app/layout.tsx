@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { TopBar } from "@/components/top-bar";
 import { PipelineProvider } from "@/context/pipeline-context";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -40,6 +41,7 @@ export default function RootLayout({
                   <TopBar />
                   <div className="px-6 py-8">{children}</div>
                 </main>
+                <Toaster position="bottom-right" richColors />
               </SidebarProvider>
             </PipelineProvider>
           </TooltipProvider>

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { readSettings } from "@/lib/settings";
+import { buildLlmClient, parseJsonResponse } from "@/lib/llm-client";
 import { readProspectLists, writeProspectLists, getActiveTemplate } from "@/lib/outreach";
 import type { Prospect, OfferTemplate } from "@/lib/types";
 
@@ -87,9 +88,7 @@ async function draftOne(
     });
 
     const raw = response.choices[0]?.message?.content ?? "";
-    // Strip markdown fences if present
-    const cleaned = raw.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "").trim();
-    const parsed = JSON.parse(cleaned) as { linkedinMessage: string; emailMessage: string };
+    const parsed = parseJsonResponse<{ linkedinMessage: string; emailMessage: string }>(raw);
     linkedinMessage = parsed.linkedinMessage ?? "";
     emailMessage = parsed.emailMessage ?? "";
 
@@ -104,9 +103,8 @@ async function draftOne(
         messages: [{ role: "user", content: strictPrompt }],
       });
       const retryRaw = retryResponse.choices[0]?.message?.content ?? "";
-      const retryCleaned = retryRaw.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "").trim();
       try {
-        const retryParsed = JSON.parse(retryCleaned) as { linkedinMessage: string; emailMessage: string };
+        const retryParsed = parseJsonResponse<{ linkedinMessage: string; emailMessage: string }>(retryRaw);
         // Use != null so an empty string is accepted (not treated as missing)
         // Don't overwrite emailMessage — the retry is only for shortening the LinkedIn message
         if (retryParsed.linkedinMessage != null) linkedinMessage = retryParsed.linkedinMessage;
@@ -147,30 +145,13 @@ export async function POST(req: Request) {
     );
   }
 
-  if (settings.provider !== "openai" && settings.provider !== "openrouter") {
-    return NextResponse.json(
-      { error: `Unknown provider '${settings.provider}' — go to Settings to configure OpenAI or OpenRouter.` },
-      { status: 400 }
-    );
-  }
-
   let client: OpenAI;
   let model: string;
-
-  if (settings.provider === "openai") {
-    const apiKey = settings.openaiApiKey || process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: "OpenAI API key not set — go to Settings." }, { status: 400 });
-    }
-    client = new OpenAI({ apiKey });
-    model = "gpt-4o";
-  } else {
-    const apiKey = settings.openrouterApiKey || process.env.OPENROUTER_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: "OpenRouter API key not set — go to Settings." }, { status: 400 });
-    }
-    client = new OpenAI({ apiKey, baseURL: "https://openrouter.ai/api/v1" });
-    model = settings.openrouterModel || "deepseek/deepseek-v4-flash";
+  try {
+    ({ client, model } = buildLlmClient(settings));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 400 });
   }
 
   // Process in batches of 3 to respect rate limits

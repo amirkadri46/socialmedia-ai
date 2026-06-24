@@ -94,10 +94,18 @@ export const ffmpeg = (
 
 export const ffprobe = (args: string[]) => run(ffprobePath(), args);
 
-/** Probe a media file's duration (seconds) and dimensions. */
+/** Parse an ffprobe rational frame-rate string like "30000/1001" → 29.97. */
+function parseFps(s?: string): number {
+  if (!s) return 0;
+  const [n, d] = s.split("/").map(Number);
+  if (!d) return n || 0;
+  return d ? n / d : 0;
+}
+
+/** Probe a media file's duration (seconds), dimensions, and frame rate. */
 export async function probe(
   file: string
-): Promise<{ durationSec: number; width: number; height: number }> {
+): Promise<{ durationSec: number; width: number; height: number; fps: number }> {
   const { stdout } = await ffprobe([
     "-v", "error",
     "-print_format", "json",
@@ -114,6 +122,7 @@ export async function probe(
     durationSec,
     width: v?.width ?? 0,
     height: v?.height ?? 0,
+    fps: parseFps(v?.avg_frame_rate) || parseFps(v?.r_frame_rate) || 0,
   };
 }
 

@@ -60,6 +60,45 @@ const FIELD_ALIASES: Record<string, string> = {
   followercount: "followers",
   follower_count: "followers",
   connections: "followers",
+  // ── Google Maps business fields ──
+  // business name (Maps "title"/"name" → company, NOT fullName)
+  businessname: "company",
+  placename: "company",
+  // businessCategory
+  category: "businessCategory",
+  categoryname: "businessCategory",
+  categories: "businessCategory",
+  type: "businessCategory",
+  businesscategory: "businessCategory",
+  // rating
+  rating: "rating",
+  stars: "rating",
+  totalscore: "rating",
+  averagerating: "rating",
+  // reviewCount
+  reviews: "reviewCount",
+  reviewscount: "reviewCount",
+  reviewcount: "reviewCount",
+  userratingstotal: "reviewCount",
+  numberofreviews: "reviewCount",
+  // priceRange
+  price: "priceRange",
+  pricerange: "priceRange",
+  pricelevel: "priceRange",
+  // phone
+  phone: "phone",
+  phonenumber: "phone",
+  internationalphonenumber: "phone",
+  telephone: "phone",
+  // address
+  address: "address",
+  formattedaddress: "address",
+  street: "address",
+  fulladdress: "address",
+  // reviewsRaw
+  reviewstext: "reviewsRaw",
+  reviewsraw: "reviewsRaw",
+  reviewtext: "reviewsRaw",
 };
 
 // dev_fusion/linkedin-profile-scraper known column names
@@ -81,16 +120,47 @@ const LINKEDIN_SCRAPER_PRESET: Record<string, string> = {
   connectionsCount: "followers",
 };
 
+// Common Apify Google Maps scraper column names → canonical Prospect field
+const GOOGLE_MAPS_PRESET: Record<string, string> = {
+  title: "company", // Maps business name
+  name: "company",
+  categoryName: "businessCategory",
+  category: "businessCategory",
+  totalScore: "rating",
+  reviewsCount: "reviewCount",
+  price: "priceRange",
+  phone: "phone",
+  phoneUnformatted: "phone",
+  address: "address",
+  street: "address",
+  city: "location",
+  website: "website",
+  url: "profileUrl",
+  email: "email",
+  reviewsText: "reviewsRaw",
+};
+
 function normaliseKey(k: string): string {
   return k.toLowerCase().replace(/[\s_\-\.]/g, "");
 }
 
+// Heuristic: does this header set look like a Google Maps export?
+function looksLikeGoogleMaps(headers: string[]): boolean {
+  const norm = new Set(headers.map(normaliseKey));
+  const signals = ["totalscore", "reviewscount", "categoryname", "placeid", "reviewstext"];
+  const hits = signals.filter((s) => norm.has(s)).length;
+  return hits >= 2;
+}
+
 function suggestMapping(headers: string[]): Record<string, string> {
   const mapping: Record<string, string> = {};
+  const useMapsPreset = looksLikeGoogleMaps(headers);
   for (const h of headers) {
     const norm = normaliseKey(h);
-    // Check exact preset match first (LinkedIn scraper)
-    if (LINKEDIN_SCRAPER_PRESET[h]) {
+    if (useMapsPreset && GOOGLE_MAPS_PRESET[h]) {
+      mapping[h] = GOOGLE_MAPS_PRESET[h];
+    } else if (LINKEDIN_SCRAPER_PRESET[h]) {
+      // Exact preset match (LinkedIn scraper)
       mapping[h] = LINKEDIN_SCRAPER_PRESET[h];
     } else if (FIELD_ALIASES[norm]) {
       mapping[h] = FIELD_ALIASES[norm];
@@ -135,6 +205,7 @@ export async function POST(req: Request) {
       preview,
       suggested,
       listName,
+      detectedSource: looksLikeGoogleMaps(headers) ? "maps" : "csv",
       // Pass the full row data back so client doesn't need to re-upload
       rows,
     });

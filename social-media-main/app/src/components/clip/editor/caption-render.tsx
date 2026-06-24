@@ -79,7 +79,7 @@ export function CaptionLayer({
                 fontWeight: 800,
                 fontStyle: config.font.italic ? "italic" : undefined,
                 textDecoration: config.font.underline ? "underline" : undefined,
-                color: active ? config.effects.highlightColor : config.font.color,
+                color: w.color ?? (active ? config.effects.highlightColor : config.font.color),
                 WebkitTextStroke: stroke,
                 paintOrder: "stroke fill",
                 textShadow: shadow,

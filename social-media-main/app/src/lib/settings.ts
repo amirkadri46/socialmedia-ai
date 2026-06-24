@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import path from "path";
+import { DEFAULT_SHORTCUTS, type EditorShortcuts } from "./clip/shortcuts";
 
 const DATA_DIR = path.join(process.cwd(), "..", "data");
 const SETTINGS_PATH = path.join(DATA_DIR, "settings.json");
@@ -14,6 +15,10 @@ export interface AppSettings {
   apifyApiToken: string;
   linkedinCharLimit: number;
   emailLengthGuidance: string;
+  // Lead intelligence
+  whatsappCharLimit: number;
+  senderName: string;
+  defaultLocationLabel: string;
   // Clipping
   transcriptionProvider: "deepgram" | "assemblyai" | "local";
   deepgramApiKey: string;
@@ -26,6 +31,8 @@ export interface AppSettings {
   metaAppId: string;
   metaAppSecret: string;
   enableSocialPublish: boolean;
+  // Clip editor
+  editorShortcuts: EditorShortcuts;
 }
 
 const DEFAULTS: AppSettings = {
@@ -37,6 +44,9 @@ const DEFAULTS: AppSettings = {
   apifyApiToken: "",
   linkedinCharLimit: 200,
   emailLengthGuidance: "Aim for 80–130 words. Conversational and direct. No self-introduction opener.",
+  whatsappCharLimit: 600,
+  senderName: "",
+  defaultLocationLabel: "",
   // Clipping
   transcriptionProvider: "deepgram",
   deepgramApiKey: "",
@@ -49,6 +59,8 @@ const DEFAULTS: AppSettings = {
   metaAppId: "",
   metaAppSecret: "",
   enableSocialPublish: false,
+  // Clip editor
+  editorShortcuts: { ...DEFAULT_SHORTCUTS },
 };
 
 export function readSettings(): AppSettings {

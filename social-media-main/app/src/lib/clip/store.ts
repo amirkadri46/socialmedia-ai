@@ -1,6 +1,6 @@
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "fs";
 import path from "path";
 import type {
   ClipJob,
@@ -31,6 +31,18 @@ function ensureDataDir() {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 }
 
+/**
+ * Atomic write: write to a temp file then rename over the target. rename() is atomic on
+ * the same filesystem, so concurrent readers never observe a half-written file and a
+ * crash mid-write can't corrupt the existing data. Used for the JSON/CSV stores that
+ * multiple routes (schedule, publish, pipeline) may write near-simultaneously.
+ */
+function writeFileAtomic(p: string, data: string): void {
+  const tmp = `${p}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  writeFileSync(tmp, data, "utf-8");
+  renameSync(tmp, p);
+}
+
 export function clipMediaDir(): string {
   if (!existsSync(CLIP_DIR)) mkdirSync(CLIP_DIR, { recursive: true });
   return CLIP_DIR;
@@ -56,7 +68,7 @@ export function readJobs(): ClipJob[] {
 
 export function writeJobs(jobs: ClipJob[]): void {
   ensureDataDir();
-  writeFileSync(JOBS_PATH, JSON.stringify(jobs, null, 2), "utf-8");
+  writeFileAtomic(JOBS_PATH, JSON.stringify(jobs, null, 2));
 }
 
 export function upsertJob(job: ClipJob): void {
@@ -150,7 +162,7 @@ export function writeClips(clips: Clip[]): void {
     header: true,
     columns: CLIP_COLUMNS,
   });
-  writeFileSync(CLIPS_PATH, output, "utf-8");
+  writeFileAtomic(CLIPS_PATH, output);
 }
 
 export function appendClips(newClips: Clip[]): void {
@@ -190,14 +202,21 @@ export function readAccounts(): SocialAccount[] {
 
 export function writeAccounts(accounts: SocialAccount[]): void {
   ensureDataDir();
-  writeFileSync(ACCOUNTS_PATH, JSON.stringify(accounts, null, 2), "utf-8");
+  writeFileAtomic(ACCOUNTS_PATH, JSON.stringify(accounts, null, 2));
 }
 
 export function upsertAccount(account: SocialAccount): void {
   const accounts = readAccounts();
-  const idx = accounts.findIndex((a) => a.id === account.id);
-  if (idx >= 0) accounts[idx] = account;
-  else accounts.push(account);
+  const idx = accounts.findIndex(
+    (a) =>
+      (account.igUserId && a.igUserId === account.igUserId) || a.id === account.id
+  );
+  if (idx >= 0) {
+    // Preserve the original id/connectedAt; refresh token + profile fields.
+    accounts[idx] = { ...accounts[idx], ...account, id: accounts[idx].id, connectedAt: accounts[idx].connectedAt };
+  } else {
+    accounts.push(account);
+  }
   writeAccounts(accounts);
 }
 
@@ -219,7 +238,7 @@ export function readPosts(): ScheduledPost[] {
 
 export function writePosts(posts: ScheduledPost[]): void {
   ensureDataDir();
-  writeFileSync(POSTS_PATH, JSON.stringify(posts, null, 2), "utf-8");
+  writeFileAtomic(POSTS_PATH, JSON.stringify(posts, null, 2));
 }
 
 export function upsertPost(post: ScheduledPost): void {
@@ -292,6 +311,7 @@ export function getDefaultEdit(clip: Clip, job: ClipJob): ClipEdit {
     tracker: false,
     caption,
     removed: [],
+    wordStyles: [],
     textOverlays,
     mediaOverlays: [],
     broll: [],

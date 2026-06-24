@@ -1,4 +1,4 @@
-import type { ClipEdit, Word } from "../types";
+import type { ClipEdit, TransitionMarker, Word } from "../types";
 
 // Pure time-mapping shared by the browser preview and the ffmpeg export so they
 // never diverge (PRD §2). All "window" coords are seconds within [sourceIn, sourceOut];
@@ -81,18 +81,73 @@ export function layoutAt(edit: ClipEdit, editedT: number) {
   );
 }
 
-/** Words that fall inside the clip window, rebased to window coords. */
+/**
+ * Words that fall inside the clip window, rebased to window coords, with per-word
+ * `wordStyles` applied (text edits + highlight color). The style key is the word's
+ * SOURCE start time, matched with a small tolerance.
+ */
 export function windowWords(edit: ClipEdit, words: Word[]): Word[] {
+  const styles = edit.wordStyles ?? [];
   return words
     .filter((w) => w.end > edit.sourceInSec && w.start < edit.sourceOutSec)
-    .map((w) => ({
-      text: w.text,
-      start: w.start - edit.sourceInSec,
-      end: w.end - edit.sourceInSec,
-    }));
+    .map((w) => {
+      const st = styles.find((s) => Math.abs(s.t - w.start) < 1e-3);
+      return {
+        text: st?.text ?? w.text,
+        start: w.start - edit.sourceInSec,
+        end: w.end - edit.sourceInSec,
+        color: st?.color,
+      };
+    });
 }
 
 /** Whether a window time has been removed by speech cleanup. */
 export function isRemoved(edit: ClipEdit, windowT: number): boolean {
   return edit.removed.some((r) => windowT >= r.start && windowT < r.end);
+}
+
+/**
+ * The effective transition list = manual markers, plus (when `autoTransitions` is on)
+ * auto-generated crossfades at every layout (Fill/Fit) boundary AND every speech-cleanup
+ * cut boundary, all in edited-timeline coords. Auto-markers are dropped when a manual marker
+ * already sits within 0.3s. Pure function so the browser preview and the ffmpeg export apply
+ * the exact same set (PRD §2 parity).
+ */
+export function allTransitions(edit: ClipEdit): TransitionMarker[] {
+  const manual = edit.transitions ?? [];
+  if (!edit.autoTransitions) return manual;
+
+  const autoMarkers: TransitionMarker[] = [];
+  // Layout (Fill/Fit / speaker-layout) boundaries — already in edited-timeline coords.
+  for (const seg of edit.layout) {
+    if (seg.start > 0) {
+      autoMarkers.push({ id: `auto-layout-${seg.id}`, atTime: seg.start, type: "crossfade", durationSec: 0.4 });
+    }
+  }
+  // Kept-segment (speech-cleanup cut) boundaries — cumulative edited time between kept pieces.
+  const segs = keptSegments(edit);
+  let acc = 0;
+  for (let i = 0; i < segs.length - 1; i++) {
+    acc += segs[i].end - segs[i].start;
+    if (acc > 0) autoMarkers.push({ id: `auto-cut-${i}`, atTime: acc, type: "crossfade", durationSec: 0.4 });
+  }
+
+  // Manual wins; also dedupe auto-markers against each other within 0.3s.
+  const result = [...manual];
+  for (const a of autoMarkers) {
+    if (!result.some((m) => Math.abs(m.atTime - a.atTime) < 0.3)) result.push(a);
+  }
+  return result;
+}
+
+/** Coalesce overlapping/adjacent ranges (shared by transcript cuts and timeline cuts). */
+export function mergeRanges(ranges: Range[]): Range[] {
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  const out: Range[] = [];
+  for (const r of sorted) {
+    const last = out[out.length - 1];
+    if (last && r.start <= last.end) last.end = Math.max(last.end, r.end);
+    else out.push({ ...r });
+  }
+  return out;
 }

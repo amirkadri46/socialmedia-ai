@@ -13,6 +13,7 @@ import {
   FileText,
   Scissors,
   Share2,
+  LayoutDashboard,
 } from "lucide-react";
 import { Sidebar } from "@/components/ui/sidebar";
 
@@ -24,7 +25,8 @@ const SECTIONS = [
     icon: Mail,
     label: "Outreach",
     items: [
-      { title: "Prospects", href: "/outreach/prospects", icon: Mail },
+      { title: "Dashboard", href: "/outreach/dashboard", icon: LayoutDashboard },
+      { title: "Leads", href: "/outreach/prospects", icon: Users },
       { title: "Templates", href: "/outreach/templates", icon: FileText },
     ],
   },

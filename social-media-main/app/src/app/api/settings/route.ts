@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readSettings, writeSettings, type AppSettings } from "@/lib/settings";
+import { resolveShortcuts } from "@/lib/clip/shortcuts";
 
 export async function GET() {
   return NextResponse.json(readSettings());
@@ -16,6 +17,9 @@ export async function POST(req: Request) {
     apifyApiToken: body.apifyApiToken ?? "",
     linkedinCharLimit: body.linkedinCharLimit ?? 200,
     emailLengthGuidance: body.emailLengthGuidance ?? "Aim for 80–130 words. Conversational and direct. No self-introduction opener.",
+    whatsappCharLimit: body.whatsappCharLimit ?? 600,
+    senderName: body.senderName ?? "",
+    defaultLocationLabel: body.defaultLocationLabel ?? "",
     transcriptionProvider: body.transcriptionProvider ?? "deepgram",
     deepgramApiKey: body.deepgramApiKey ?? "",
     assemblyaiApiKey: body.assemblyaiApiKey ?? "",
@@ -26,6 +30,7 @@ export async function POST(req: Request) {
     metaAppId: body.metaAppId ?? "",
     metaAppSecret: body.metaAppSecret ?? "",
     enableSocialPublish: body.enableSocialPublish ?? false,
+    editorShortcuts: resolveShortcuts(body.editorShortcuts),
   });
   return NextResponse.json({ ok: true });
 }

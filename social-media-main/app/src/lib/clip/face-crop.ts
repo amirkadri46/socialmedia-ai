@@ -62,7 +62,43 @@ async function detectFaceCenter(
   } catch { return null; }
 }
 
-function buildCropRect(
+/**
+ * Largest face-centered crop of the given pixel aspect (w/h), normalized 0–1 of the source.
+ * `faceTopRatio` controls headroom (where the face sits vertically within the crop).
+ */
+export function buildCropRectForAspect(
+  cx: number,
+  cy: number,
+  srcW: number,
+  srcH: number,
+  targetAR: number,
+  faceTopRatio = 0.28
+): CropRect {
+  // Guard against a bad probe (0/NaN dims or aspect): a NaN crop rect would crash the
+  // downstream ffmpeg `crop=` filter. Fall back to the full frame.
+  if (!(srcW > 0) || !(srcH > 0) || !(targetAR > 0)) {
+    return { x: 0, y: 0, w: 1, h: 1 };
+  }
+  const sAR = srcW / srcH;
+
+  let w: number, h: number;
+  if (targetAR <= sAR) {
+    // Target is narrower: use full source height, crop width to match aspect
+    h = 1;
+    w = targetAR / sAR;
+  } else {
+    // Target is wider: use full source width, crop height
+    w = 1;
+    h = sAR / targetAR;
+  }
+
+  const x = Math.min(Math.max(cx - w / 2, 0), 1 - w);
+  const y = Math.min(Math.max(cy - h * faceTopRatio, 0), 1 - h);
+
+  return { x, y, w, h };
+}
+
+export function buildCropRect(
   cx: number,
   cy: number,
   srcW: number,
@@ -70,25 +106,8 @@ function buildCropRect(
   aspect: string
 ): CropRect {
   const tAR = aspect === "1:1" ? 1 : aspect === "16:9" ? 16 / 9 : 9 / 16;
-  const sAR = srcW / srcH;
-
-  let w: number, h: number;
-  if (tAR <= sAR) {
-    // Target is narrower: use full source height, crop width to match aspect
-    h = 1;
-    w = tAR / sAR;
-  } else {
-    // Target is wider: use full source width, crop height
-    w = 1;
-    h = sAR / tAR;
-  }
-
-  // Place the face at ~28% from the top of the crop (headroom for vertical video)
-  const faceTopRatio = aspect === "16:9" ? 0.4 : 0.28;
-  const x = Math.min(Math.max(cx - w / 2, 0), 1 - w);
-  const y = Math.min(Math.max(cy - h * faceTopRatio, 0), 1 - h);
-
-  return { x, y, w, h };
+  // Place the face at ~28% from the top (more headroom on wide crops).
+  return buildCropRectForAspect(cx, cy, srcW, srcH, tAR, aspect === "16:9" ? 0.4 : 0.28);
 }
 
 /**

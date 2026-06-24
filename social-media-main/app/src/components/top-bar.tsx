@@ -12,7 +12,8 @@ const pageTitles: Record<string, string> = {
   "/creators": "Creators",
   "/configs": "Configs",
   "/settings": "Settings",
-  "/outreach/prospects": "Prospects",
+  "/outreach/prospects": "Leads",
+  "/outreach/dashboard": "Lead Dashboard",
   "/outreach/templates": "Templates",
 };
 

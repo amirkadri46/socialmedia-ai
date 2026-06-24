@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { v4 as uuid } from "uuid";
 import { readSettings } from "@/lib/settings";
-import { getClip, readAccounts, upsertPost, updateClip } from "@/lib/clip/store";
+import { getClip, readAccounts, readPosts, writePosts, updateClip } from "@/lib/clip/store";
 import { publishReel } from "@/lib/clip/social/instagram";
 import type { ScheduledPost } from "@/lib/types";
 
@@ -26,58 +26,73 @@ export async function POST(request: Request) {
   }
 
   const accounts = readAccounts();
-  const results: { accountId: string; post: ScheduledPost }[] = [];
   const publishNow = !body.scheduledFor;
 
-  for (const accountId of body.accountIds) {
-    const account = accounts.find((a) => a.id === accountId);
-    const post: ScheduledPost = {
-      id: uuid(),
-      clipId: body.clipId,
-      accountId,
-      caption: body.caption,
-      scheduledFor: body.scheduledFor,
-      status: publishNow ? "draft" : "scheduled",
-      createdAt: new Date().toISOString(),
-    };
+  // Build a post per account, publishing the "now" ones concurrently so N accounts don't
+  // run sequentially (which could blow past the function time limit on slow transcodes).
+  const results = await Promise.all(
+    body.accountIds.map(async (accountId) => {
+      const account = accounts.find((a) => a.id === accountId);
+      const post: ScheduledPost = {
+        id: uuid(),
+        clipId: body.clipId,
+        accountId,
+        caption: body.caption,
+        scheduledFor: body.scheduledFor,
+        status: publishNow ? "draft" : "scheduled",
+        createdAt: new Date().toISOString(),
+      };
 
-    if (publishNow) {
-      if (!settings.enableSocialPublish) {
-        post.status = "draft";
-        post.error =
-          "Publishing is disabled. Enable it in Settings once your Meta app is approved.";
-      } else if (!account) {
-        post.status = "failed";
-        post.error = "Account not found.";
-      } else if (!appBase.startsWith("https://")) {
-        post.status = "failed";
-        post.error =
-          "A public HTTPS URL is required to publish. Set APP_URL to your deployed (or ngrok) HTTPS URL and restart the server.";
-      } else {
-        try {
-          // Always rebuild from the current base — a persisted clip.publicUrl can
-          // point at a rotated/dead ngrok URL from an earlier publish.
-          const publicUrl = `${appBase}/api/clip/media/${clip.id}`;
-          const { mediaId } = await publishReel(
-            account.igUserId!,
-            account.accessToken,
-            publicUrl,
-            body.caption
-          );
-          post.status = "published";
-          post.error = undefined;
-          updateClip(clip.id, { caption: body.caption });
-          post.caption = `${body.caption}`.trim();
-          void mediaId;
-        } catch (err) {
+      if (publishNow) {
+        if (!settings.enableSocialPublish) {
+          post.status = "draft";
+          post.error =
+            "Publishing is disabled. Enable it in Settings once your Meta app is approved.";
+        } else if (!account) {
           post.status = "failed";
-          post.error = err instanceof Error ? err.message : "Publish failed.";
+          post.error = "Account not found.";
+        } else if (!appBase.startsWith("https://")) {
+          post.status = "failed";
+          post.error =
+            "A public HTTPS URL is required to publish. Set APP_URL to your deployed (or ngrok) HTTPS URL and restart the server.";
+        } else {
+          try {
+            // Always rebuild from the current base — a persisted clip.publicUrl can
+            // point at a rotated/dead ngrok URL from an earlier publish.
+            const publicUrl = `${appBase}/api/clip/media/${clip.id}`;
+            const { mediaId } = await publishReel(
+              account.igUserId!,
+              account.accessToken,
+              publicUrl,
+              body.caption
+            );
+            post.status = "published";
+            post.error = undefined;
+            post.caption = `${body.caption}`.trim();
+            void mediaId;
+          } catch (err) {
+            post.status = "failed";
+            post.error = err instanceof Error ? err.message : "Publish failed.";
+          }
         }
+      } else if (!account) {
+        // Scheduled-for-later: validate the account now so we don't persist a post with a
+        // dangling accountId that the scheduler can never publish.
+        post.status = "failed";
+        post.error = "Account not found — reconnect it before scheduling.";
       }
-    }
 
-    upsertPost(post);
-    results.push({ accountId, post });
+      return { accountId, post };
+    })
+  );
+
+  // Persist all new posts in a single atomic write (avoids the per-account read-modify-write
+  // race), and update the clip caption once if anything published.
+  const posts = readPosts();
+  posts.push(...results.map((r) => r.post));
+  writePosts(posts);
+  if (results.some((r) => r.post.status === "published")) {
+    updateClip(clip.id, { caption: body.caption });
   }
 
   return NextResponse.json({ ok: true, results });

@@ -24,6 +24,7 @@ export function buildAuthUrl(origin: string, state: string): string {
     scope: SCOPES.join(","),
     response_type: "code",
     state,
+    force_reauth: "true", // always show the IG login/account chooser so a different account can be added
   });
   return `https://www.instagram.com/oauth/authorize?${params}`;
 }
@@ -84,12 +85,30 @@ export async function fetchIgIdentity(accessToken: string): Promise<IgIdentity> 
   if (!res.ok) throw new Error(`Failed to fetch IG identity: ${(await res.text()).slice(0, 200)}`);
   const data = await res.json();
   if (!data.id) throw new Error("Could not resolve Instagram user. Make sure the account is Professional/Creator.");
+
+  // Lenient enrichment — never fail the connect over these.
+  let displayName = data.username ?? "";
+  let avatarUrl: string | undefined;
+  try {
+    const rich = await fetch(
+      `${IG_GRAPH}/me?` +
+        new URLSearchParams({ fields: "name,profile_picture_url", access_token: accessToken })
+    );
+    if (rich.ok) {
+      const r = await rich.json();
+      displayName = r.name || displayName;
+      avatarUrl = r.profile_picture_url || undefined;
+    }
+  } catch {
+    /* ignore — optional fields */
+  }
+
   return {
     igUserId: data.id,
     pageId: data.id,
     username: data.username ?? "",
-    displayName: data.username ?? "",
-    avatarUrl: undefined,
+    displayName,
+    avatarUrl,
   };
 }
 
@@ -117,14 +136,20 @@ export async function publishReel(
   const { id: containerId } = await createRes.json();
 
   // Poll container status (video transcode can take a while)
+  let finished = false;
   for (let i = 0; i < 60; i++) {
     await new Promise((r) => setTimeout(r, 3000));
     const statusRes = await fetch(
       `${IG_GRAPH}/${containerId}?fields=status_code&access_token=${accessToken}`
     );
     const status = await statusRes.json();
-    if (status.status_code === "FINISHED") break;
+    if (status.status_code === "FINISHED") { finished = true; break; }
     if (status.status_code === "ERROR") throw new Error("Media container processing errored.");
+  }
+  // Never publish a container that didn't finish transcoding — Instagram would reject it
+  // and (worse) the caller couldn't distinguish a real timeout from success.
+  if (!finished) {
+    throw new Error("Media processing timed out before it finished — please try again.");
   }
 
   const pubRes = await fetch(`${IG_GRAPH}/${igUserId}/media_publish`, {

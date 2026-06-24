@@ -75,12 +75,42 @@ export interface PipelineProgress {
 
 export type DraftStatus = "idle" | "drafting" | "done" | "error";
 
+// AI analysis lifecycle for a lead (separate from draftStatus)
+export type AnalysisStatus = "idle" | "analyzing" | "done" | "error";
+
+export type PriorityLevel = "hot" | "high" | "medium" | "low";
+
+// CRM pipeline stages
+export type LeadStatus =
+  | "new"
+  | "contacted"
+  | "interested"
+  | "follow_up"
+  | "meeting_booked"
+  | "proposal_sent"
+  | "won"
+  | "lost"
+  | "not_relevant";
+
+// Website presence classification
+export type WebsiteStatus = "has_website" | "no_website" | "social_only" | "unknown";
+
+// Structured cold-call brief
+export interface ColdCallNotes {
+  businessType: string;
+  reviewCount: number;
+  rating: number;
+  keyStrength: string;
+  keyWeakness: string;
+  talkingPoints: string[]; // 3–5 bullets
+}
+
 export interface Prospect {
   id: string;
   fullName?: string;
   firstName?: string;
   headline?: string;
-  company?: string;
+  company?: string; // for Maps leads = business name (reuse, don't add businessName)
   jobTitle?: string;
   location?: string;
   profileUrl?: string;
@@ -89,12 +119,43 @@ export interface Prospect {
   website?: string;
   followers?: number;
   customNotes: string;
-  linkedinMessage?: string;
-  emailMessage?: string;
+  linkedinMessage?: string; // existing — LinkedIn flow
+  emailMessage?: string; // existing — REUSE for the email draft, do NOT duplicate
   draftStatus: DraftStatus;
   lastDraftedAt?: string;
-  source: "csv" | "apify";
+  source: "csv" | "apify" | "maps";
   rawData?: Record<string, string>;
+
+  // ── Google Maps business inputs ──
+  businessCategory?: string; // normalized category (e.g. "Dental Clinic")
+  rating?: number; // 0–5
+  reviewCount?: number;
+  priceRange?: string; // "$", "$$", "$$$", "$$$$"
+  phone?: string;
+  address?: string;
+  reviewsRaw?: string; // raw scraped review text blob (input to AI)
+
+  // ── AI analysis outputs ──
+  analysisStatus?: AnalysisStatus;
+  priorityScore?: number; // 0–100
+  priorityLevel?: PriorityLevel;
+  reviewSummary?: string; // AI summary of review sentiment/themes
+  websiteStatus?: WebsiteStatus;
+  outreachAngle?: string; // the specific hook to lead with
+  lastAnalyzedAt?: string;
+
+  // ── personalized outreach (multi-channel) ──
+  whatsappMessage?: string; // NEW channel (emailMessage above is reused)
+  coldCallNotes?: ColdCallNotes;
+
+  // ── CRM pipeline ──
+  leadStatus?: LeadStatus; // defaults to "new" on import
+  lastContactedAt?: string;
+  followUpDate?: string; // ISO date
+  dealValue?: number; // optional revenue tracking
+  priceQuoted?: number; // price you quoted the lead
+  priceConfirmed?: number; // price the lead confirmed / agreed to
+  // free-text objection / note the user wants recorded (reuses customNotes for the note column)
 }
 
 export interface ProspectList {
@@ -124,6 +185,14 @@ export interface Word {
   text: string;
   start: number;
   end: number;
+  color?: string; // resolved per-word render color (hex); set by windowWords from wordStyles
+}
+
+// Per-word style overrides, keyed by the word's SOURCE start time (Word.start).
+export interface WordStyle {
+  t: number; // = Word.start in source seconds (stable key)
+  color?: string; // highlight / font color, hex (e.g. "#3BE477"); undefined = none
+  text?: string; // edited replacement text (undefined = original)
 }
 
 export interface Moment {
@@ -243,13 +312,36 @@ export interface CropRect {
   h: number;
 } // normalized 0–1 of the source frame
 
+// Placement of the (cropped) source video inside the output canvas, normalized to the
+// canvas (0–1). May exceed [0,1] when the video overflows the canvas (Fill); sits inside
+// [0,1] with black bars when smaller than the canvas (Fit). Mirrors the on-screen video box.
+export interface VideoFrame {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+// Multiple-speaker layouts (3D): a segment can stack N face-crops of the SAME source into
+// tiled slots of the output canvas. "single" (default/absent) = the classic one-frame model.
+export type LayoutKind = "single" | "split" | "triple" | "quad"; // 1 / 2 / 3 / 4 panes
+
+export interface SpeakerPane {
+  crop: CropRect; // source region for this speaker (built to the slot's pixel aspect, face-centered)
+  label?: string; // optional ("Speaker 1")
+}
+
 export interface LayoutSegment {
   id: string;
   start: number;
   end: number; // clip-local seconds
-  mode: "fill" | "fit"; // fill = cover-crop (zoom to speaker); fit = whole frame, padded
+  mode: "fill" | "fit"; // fill = video covers the canvas; fit = whole video inside the canvas (padded)
   speakerId?: string;
-  crop?: CropRect; // manual or tracked crop (fill mode)
+  crop?: CropRect; // source region kept (set in the Crop modal); undefined = whole frame
+  cropAspect?: string; // aspect label chosen for the crop ("9:16" | "1:1" | "16:9" | "4:3" | "9:8" | "4:5" | "original" | "custom")
+  frame?: VideoFrame; // video placement in the output canvas (move/scale on the preview); derived from `mode` when absent
+  kind?: LayoutKind; // multi-speaker layout (3D); absent / "single" = single-frame behavior above
+  panes?: SpeakerPane[]; // when kind != "single": the per-speaker crops (length 2/3/4), tiled into slots
 }
 
 export interface CaptionFont {
@@ -291,6 +383,7 @@ export interface TextOverlayStyle {
   underline?: boolean;
   align?: "left" | "center" | "right";
   widthPct?: number; // max width as % of canvas
+  opacity?: number; // 0–1 (e.g. for watermark layers); 1 when absent
 }
 
 export interface TextOverlay {
@@ -328,7 +421,7 @@ export interface BrollSegment {
 export interface TransitionMarker {
   id: string;
   atTime: number;
-  type: "fade" | "crossfade" | "crosszoom" | "zoomin" | "zoomout";
+  type: "fadein" | "fadeout" | "crossfade" | "crosszoom" | "zoomin" | "zoomout";
   durationSec: number;
 }
 
@@ -361,12 +454,15 @@ export interface ClipEdit {
   tracker: boolean;
   caption: CaptionConfig;
   removed: RemovedRange[];
+  wordStyles?: WordStyle[]; // per-word highlight/color + text edits (3A)
+  muteBase?: boolean; // mute the base video audio in export (3B)
   textOverlays: TextOverlay[];
   mediaOverlays: MediaOverlay[];
   broll: BrollSegment[];
   transitions: TransitionMarker[];
   autoTransitions: boolean;
   audio: AudioTrack[];
+  blurBg?: BlurBackground; // auto blurred background for Fit-mode segments (absent = off)
   updatedAt: string;
 }
 
@@ -376,3 +472,23 @@ export interface CaptionTemplate {
   config: CaptionConfig;
   createdAt: string;
 }
+
+// Auto blurred background (Fit mode): when the video doesn't fill the canvas, the empty
+// area is filled with a strongly-blurred, cover-scaled copy of the SAME source frame
+// (updated every frame in preview, mirrored in export). Honored only for single-layout
+// segments in "fit" mode where bars would otherwise appear.
+export interface BlurBackground {
+  enabled: boolean;
+  blur: number; // intensity 0–100
+  scale: number; // cover-scale multiplier (≥1 zooms the background in)
+  brightness: number; // 0.3–1.5 (1 = unchanged)
+  opacity: number; // 0–1 (blended over black)
+}
+
+export const DEFAULT_BLUR_BG: BlurBackground = {
+  enabled: true,
+  blur: 60,
+  scale: 1.2,
+  brightness: 0.7,
+  opacity: 1,
+};

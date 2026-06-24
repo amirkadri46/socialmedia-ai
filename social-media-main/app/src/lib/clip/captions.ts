@@ -239,9 +239,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, Effect, Text`;
           if (j === 0) raw = raw.replace(/^[\s,.;:!?'"-]+/, "");
           const t = config.font.uppercase ? raw.toUpperCase() : raw;
           if (!t) return "";
-          return j === idx
-            ? `${popTag(true)}{\\c${inlineColor(highlight)}}${escapeAss(t)}{\\c${inlineColor(base)}\\fscx100\\fscy100}`
-            : escapeAss(t);
+          // Per-word highlight color (3A) wins over the karaoke base/highlight,
+          // and persists whether or not this is the active spoken word.
+          const wc = w.color ? inlineColor(rgb(w.color)) : null;
+          if (j === idx) {
+            return `${popTag(true)}{\\c${wc ?? inlineColor(highlight)}}${escapeAss(t)}{\\c${inlineColor(base)}\\fscx100\\fscy100}`;
+          }
+          return wc ? `{\\c${wc}}${escapeAss(t)}{\\c${inlineColor(base)}}` : escapeAss(t);
         })
         .filter(Boolean)
         .join(" ");

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { rmSync, existsSync } from "fs";
 import path from "path";
 import { v4 as uuid } from "uuid";
-import { readProspectLists, writeProspectLists, writeProspectListAsCsv } from "@/lib/outreach";
+import { readProspectLists, writeProspectLists, writeProspectListAsCsv, defaultLeadFields } from "@/lib/outreach";
 import type { Prospect, ProspectList } from "@/lib/types";
 
 const CSV_DIR = path.join(process.cwd(), "..", "data", "csv");
@@ -12,7 +12,16 @@ const WRITABLE_PROSPECT_FIELDS = new Set<string>([
   "fullName", "firstName", "headline", "company", "jobTitle", "location",
   "profileUrl", "email", "bio", "website", "followers", "customNotes",
   "linkedinMessage", "emailMessage", "draftStatus", "lastDraftedAt",
+  // ── Lead Intelligence ──
+  "businessCategory", "rating", "reviewCount", "priceRange", "phone", "address", "reviewsRaw",
+  "analysisStatus", "priorityScore", "priorityLevel", "reviewSummary", "websiteStatus",
+  "outreachAngle", "lastAnalyzedAt", "whatsappMessage", "coldCallNotes",
+  "leadStatus", "lastContactedAt", "followUpDate", "dealValue",
+  "priceQuoted", "priceConfirmed",
 ]);
+
+// Fields that, when present in the mapping, indicate a Google Maps lead source
+const MAPS_FIELDS = ["businessCategory", "rating", "reviewCount", "priceRange", "address", "reviewsRaw"];
 
 // GET /api/outreach/lists — return all lists (with prospect count, not full data for perf)
 export async function GET() {
@@ -30,11 +39,22 @@ export async function GET() {
 // POST /api/outreach/lists — create list from CSV import result
 // Body: { listName, rows, mapping, csvText? }
 export async function POST(req: Request) {
-  const { listName, rows, mapping, csvText } = (await req.json()) as {
+  const { listName, rows, mapping, csvText, detectedSource } = (await req.json()) as {
     listName: string;
     rows: Record<string, string>[];
     mapping: Record<string, string>;
     csvText?: string;
+    detectedSource?: "csv" | "maps";
+  };
+
+  // A list is a "maps" list if explicitly flagged OR any Maps-specific field is mapped.
+  const mappedFields = new Set(Object.values(mapping));
+  const isMaps = detectedSource === "maps" || MAPS_FIELDS.some((f) => mappedFields.has(f));
+
+  const num = (v: unknown): number | undefined => {
+    if (v == null || v === "") return undefined;
+    const n = Number(String(v).replace(/[^0-9.]/g, ""));
+    return Number.isFinite(n) ? n : undefined;
   };
 
   const prospects: Prospect[] = rows.map((row) => {
@@ -64,11 +84,21 @@ export async function POST(req: Request) {
       email: mapped.email as string | undefined,
       bio: mapped.bio as string | undefined,
       website: mapped.website as string | undefined,
-      followers: mapped.followers ? Number(mapped.followers) : undefined,
+      followers: num(mapped.followers),
       customNotes: "",
       draftStatus: "idle",
-      source: "csv",
+      source: isMaps ? "maps" : "csv",
       rawData: Object.keys(rawData).length ? rawData : undefined,
+      // ── Google Maps inputs ──
+      businessCategory: mapped.businessCategory as string | undefined,
+      rating: num(mapped.rating),
+      reviewCount: num(mapped.reviewCount),
+      priceRange: mapped.priceRange as string | undefined,
+      phone: mapped.phone as string | undefined,
+      address: mapped.address as string | undefined,
+      reviewsRaw: mapped.reviewsRaw as string | undefined,
+      // ── CRM/analysis defaults ──
+      ...defaultLeadFields(),
     };
   });
 
@@ -116,6 +146,14 @@ export async function PATCH(req: Request) {
   for (const [k, v] of Object.entries(updates)) {
     if (WRITABLE_PROSPECT_FIELDS.has(k)) (safeUpdates as Record<string, unknown>)[k] = v;
   }
+  // Moving to "contacted" auto-stamps lastContactedAt if not already set.
+  if (
+    safeUpdates.leadStatus === "contacted" &&
+    !prospect.lastContactedAt &&
+    !safeUpdates.lastContactedAt
+  ) {
+    safeUpdates.lastContactedAt = new Date().toISOString();
+  }
   Object.assign(prospect, safeUpdates);
   writeProspectLists(lists);
   writeProspectListAsCsv(list);
@@ -124,9 +162,28 @@ export async function PATCH(req: Request) {
 }
 
 // DELETE /api/outreach/lists?id= — delete a list
+// DELETE /api/outreach/lists?listId=&prospectId= — delete a single prospect from a list
 export async function DELETE(req: Request) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
+  const listId = searchParams.get("listId");
+  const prospectId = searchParams.get("prospectId");
+
+  // Single-prospect delete
+  if (listId && prospectId) {
+    const lists = readProspectLists();
+    const list = lists.find((l) => l.id === listId);
+    if (!list) return NextResponse.json({ error: "List not found" }, { status: 404 });
+    const before = list.prospects.length;
+    list.prospects = list.prospects.filter((p) => p.id !== prospectId);
+    if (list.prospects.length === before) {
+      return NextResponse.json({ error: "Prospect not found" }, { status: 404 });
+    }
+    writeProspectLists(lists);
+    writeProspectListAsCsv(list);
+    return NextResponse.json({ ok: true });
+  }
+
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const lists = readProspectLists();

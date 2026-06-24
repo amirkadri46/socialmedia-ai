@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Calendar,
   Loader2,
@@ -141,7 +142,28 @@ export function ScheduleModal({ clip, onClose }: { clip: Clip; onClose: () => vo
         <div className="grid gap-6 md:grid-cols-[200px_1fr]">
           {/* Accounts */}
           <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Accounts</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Accounts</p>
+              {accounts.length > 0 && (
+                <div className="flex items-center gap-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setSelected(accounts.map((a) => a.id))}
+                    className="text-muted-foreground hover:text-foreground hover:underline"
+                  >
+                    All
+                  </button>
+                  <span className="text-muted-foreground">·</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelected([])}
+                    className="text-muted-foreground hover:text-foreground hover:underline"
+                  >
+                    None
+                  </button>
+                </div>
+              )}
+            </div>
             {accounts.length === 0 && (
               <a
                 href="/clip/social"
@@ -157,16 +179,26 @@ export function ScheduleModal({ clip, onClose }: { clip: Clip; onClose: () => vo
                   key={a.id}
                   variant="outline"
                   onClick={() => toggle(a.id)}
-                  className={`w-full justify-start gap-2 ${
+                  className={`h-auto w-full justify-start gap-2 py-2 ${
                     isSel ? "border-primary bg-primary/10" : ""
                   }`}
                 >
-                  <Instagram className="h-4 w-4" />
+                  <Avatar className="h-6 w-6">
+                    {a.avatarUrl && <AvatarImage src={a.avatarUrl} alt={a.username} />}
+                    <AvatarFallback>
+                      <Instagram className="h-3.5 w-3.5" />
+                    </AvatarFallback>
+                  </Avatar>
                   <span className="min-w-0 flex-1 truncate text-sm">{a.displayName || a.username}</span>
                   {isSel && <Check className="h-4 w-4 text-primary" />}
                 </Button>
               );
             })}
+            {accounts.length > 0 && (
+              <p className="pt-1 text-xs text-muted-foreground">
+                Publishing to {selected.length} account{selected.length === 1 ? "" : "s"}
+              </p>
+            )}
           </div>
 
           {/* Caption + controls */}

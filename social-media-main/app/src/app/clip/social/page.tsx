@@ -4,7 +4,25 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Share2, Instagram, Plus, Trash2, Loader2, AlertTriangle } from "lucide-react";
+
+function formatConnected(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
 
 interface AccountLite {
   id: string;
@@ -37,7 +55,14 @@ export default function SocialPage() {
       .catch(() => {});
 
     const sp = new URLSearchParams(window.location.search);
-    if (sp.get("connected")) setNotice({ kind: "ok", msg: `Connected @${sp.get("connected")}` });
+    if (sp.get("connected")) {
+      const handle = sp.get("connected");
+      setNotice(
+        sp.get("reconnected")
+          ? { kind: "ok", msg: `Reconnected @${handle} (token refreshed)` }
+          : { kind: "ok", msg: `Connected @${handle}` }
+      );
+    }
     if (sp.get("error")) setNotice({ kind: "err", msg: decodeURIComponent(sp.get("error")!) });
     if (sp.get("connected") || sp.get("error")) {
       window.history.replaceState({}, "", "/clip/social");
@@ -91,12 +116,19 @@ export default function SocialPage() {
       <Card>
         <CardContent className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Connected accounts</h2>
-          <Button asChild variant="outline">
-            <a href="/api/clip/social/connect?platform=instagram">
-              <Plus className="h-4 w-4" /> Add account
-            </a>
-          </Button>
+          <h2 className="text-sm font-semibold">
+            Connected accounts{!loading && accounts.length > 0 ? ` (${accounts.length})` : ""}
+          </h2>
+          <div className="flex flex-col items-end gap-1">
+            <Button asChild variant="outline">
+              <a href="/api/clip/social/connect?platform=instagram">
+                <Plus className="h-4 w-4" /> Add account
+              </a>
+            </Button>
+            <p className="max-w-60 text-right text-[11px] leading-tight text-muted-foreground">
+              You&apos;ll be asked to log in — switch to the Instagram account you want to add before authorizing.
+            </p>
+          </div>
         </div>
 
         {loading ? (
@@ -114,20 +146,45 @@ export default function SocialPage() {
                 key={a.id}
                 className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3"
               >
-                <Instagram className="h-5 w-5 text-foreground" />
+                <Avatar className="h-9 w-9">
+                  {a.avatarUrl && <AvatarImage src={a.avatarUrl} alt={a.username} />}
+                  <AvatarFallback>
+                    <Instagram className="h-4 w-4 text-foreground" />
+                  </AvatarFallback>
+                </Avatar>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{a.displayName || a.username}</p>
-                  <p className="truncate text-xs text-muted-foreground">@{a.username} · Instagram</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    @{a.username} · Instagram
+                    {a.connectedAt && ` · Connected ${formatConnected(a.connectedAt)}`}
+                  </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => disconnect(a.id)}
-                  className="text-muted-foreground hover:text-destructive"
-                  title="Disconnect"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:text-destructive"
+                      title="Disconnect"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Disconnect @{a.username}?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        You can reconnect anytime.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => disconnect(a.id)}>
+                        Disconnect
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             ))}
           </div>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { v4 as uuid } from "uuid";
 import { exchangeCode, fetchIgIdentity } from "@/lib/clip/social/instagram";
-import { upsertAccount } from "@/lib/clip/store";
+import { readAccounts, upsertAccount } from "@/lib/clip/store";
 import type { SocialAccount } from "@/lib/types";
 
 /** OAuth redirect target: exchange code → resolve IG identity → persist account. */
@@ -17,8 +17,9 @@ export async function GET(request: Request) {
   try {
     const accessToken = await exchangeCode(origin, code);
     const ig = await fetchIgIdentity(accessToken);
+    const existing = readAccounts().find((a) => a.igUserId === ig.igUserId);
     const account: SocialAccount = {
-      id: uuid(),
+      id: existing?.id ?? uuid(),
       platform: "instagram",
       displayName: ig.displayName,
       username: ig.username,
@@ -26,10 +27,14 @@ export async function GET(request: Request) {
       accessToken,
       igUserId: ig.igUserId,
       pageId: ig.pageId,
-      connectedAt: new Date().toISOString(),
+      expiresAt: existing?.expiresAt,
+      connectedAt: existing?.connectedAt ?? new Date().toISOString(),
     };
     upsertAccount(account);
-    return NextResponse.redirect(`${origin}/clip/social?connected=${encodeURIComponent(ig.username)}`);
+    const reconnected = Boolean(existing);
+    return NextResponse.redirect(
+      `${origin}/clip/social?connected=${encodeURIComponent(ig.username)}${reconnected ? "&reconnected=1" : ""}`
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : "OAuth callback failed.";
     return NextResponse.redirect(`${origin}/clip/social?error=${encodeURIComponent(msg)}`);

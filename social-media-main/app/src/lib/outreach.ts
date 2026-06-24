@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import path from "path";
 import { v4 as uuid } from "uuid";
 import { stringify } from "csv-stringify/sync";
-import type { ProspectList, OfferTemplate } from "./types";
+import type { ProspectList, OfferTemplate, Prospect } from "./types";
 
 const DATA_DIR = path.join(process.cwd(), "..", "data");
 const LISTS_PATH = path.join(DATA_DIR, "outreach-lists.json");
@@ -49,10 +49,37 @@ export function writeProspectListAsCsv(list: ProspectList): void {
     emailMessage: p.emailMessage ?? "",
     draftStatus: p.draftStatus,
     lastDraftedAt: p.lastDraftedAt ?? "",
+    // ── Lead Intelligence columns ──
+    source: p.source ?? "",
+    businessCategory: p.businessCategory ?? "",
+    rating: p.rating ?? "",
+    reviewCount: p.reviewCount ?? "",
+    priceRange: p.priceRange ?? "",
+    phone: p.phone ?? "",
+    address: p.address ?? "",
+    priorityScore: p.priorityScore ?? "",
+    priorityLevel: p.priorityLevel ?? "",
+    websiteStatus: p.websiteStatus ?? "",
+    reviewSummary: p.reviewSummary ?? "",
+    outreachAngle: p.outreachAngle ?? "",
+    whatsappMessage: p.whatsappMessage ?? "",
+    analysisStatus: p.analysisStatus ?? "",
+    lastAnalyzedAt: p.lastAnalyzedAt ?? "",
+    leadStatus: p.leadStatus ?? "",
+    lastContactedAt: p.lastContactedAt ?? "",
+    followUpDate: p.followUpDate ?? "",
+    dealValue: p.dealValue ?? "",
+    priceQuoted: p.priceQuoted ?? "",
+    priceConfirmed: p.priceConfirmed ?? "",
   }));
   const safeName = list.name.replace(/[^a-z0-9]/gi, "-").toLowerCase().slice(0, 40);
   const csvPath = path.join(CSV_DIR, `${safeName}-${list.id.slice(0, 8)}.csv`);
   writeFileSync(csvPath, stringify(rows, { header: true }), "utf-8");
+}
+
+// Seed CRM/analysis defaults on import so every lead has a sane starting state.
+export function defaultLeadFields(): Pick<Prospect, "leadStatus" | "analysisStatus"> {
+  return { leadStatus: "new", analysisStatus: "idle" };
 }
 
 // ── Templates ─────────────────────────────────────────────────────────────────
