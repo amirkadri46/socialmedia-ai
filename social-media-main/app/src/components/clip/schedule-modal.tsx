@@ -27,8 +27,13 @@ import {
   Check,
   Plus,
   Instagram,
+  LayoutTemplate,
 } from "lucide-react";
-import type { Clip } from "@/lib/types";
+import { CaptionTemplatesManager } from "@/components/clip/caption-templates-manager";
+import type { Clip, CaptionPromptTemplate } from "@/lib/types";
+
+const NO_TEMPLATE = "__none__";
+const LAST_TEMPLATE_KEY = "clip:lastCaptionTemplate";
 
 interface AccountLite {
   id: string;
@@ -50,8 +55,11 @@ export function ScheduleModal({ clip, onClose }: { clip: Clip; onClose: () => vo
   const [format, setFormat] = useState("");
   const [hashtags, setHashtags] = useState(true);
   const [when, setWhen] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState<null | "schedule" | "publish">(null);
   const [result, setResult] = useState<string>("");
+  const [templates, setTemplates] = useState<CaptionPromptTemplate[]>([]);
+  const [templateId, setTemplateId] = useState<string>(NO_TEMPLATE);
+  const [managerOpen, setManagerOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/clip/social/accounts")
@@ -63,19 +71,43 @@ export function ScheduleModal({ clip, onClose }: { clip: Clip; onClose: () => vo
       .catch(() => {});
   }, []);
 
-  // Auto-generate an initial caption if none exists.
+  // Load templates and restore the last-used one (per the goal: same creator, same template
+  // across clips without re-picking it every time).
   useEffect(() => {
-    if (!clip.caption) void regenerate();
+    let restored = NO_TEMPLATE;
+    fetch("/api/clip/social/caption-templates")
+      .then((r) => r.json())
+      .then((list: CaptionPromptTemplate[]) => {
+        setTemplates(list);
+        const last = typeof window !== "undefined" ? localStorage.getItem(LAST_TEMPLATE_KEY) : null;
+        if (last && list.some((t) => t.id === last)) {
+          restored = last;
+          setTemplateId(last);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        // Auto-generate an initial caption once, only after templates resolve, so the restored
+        // template is used as the base context (no throwaway no-template generation first).
+        if (!clip.caption) void regenerate(restored);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function regenerate() {
+  async function regenerate(useTemplateId: string = templateId) {
     setGenerating(true);
+    setResult("");
     try {
       const res = await fetch("/api/clip/social/caption", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clipId: clip.id, tone, format, hashtags }),
+        body: JSON.stringify({
+          clipId: clip.id,
+          tone,
+          format,
+          hashtags,
+          templateId: useTemplateId !== NO_TEMPLATE ? useTemplateId : undefined,
+        }),
       });
       const data = await res.json();
       if (res.ok) setCaption(data.caption);
@@ -87,6 +119,17 @@ export function ScheduleModal({ clip, onClose }: { clip: Clip; onClose: () => vo
     }
   }
 
+  // Selecting a template immediately regenerates so the user sees the on-brand caption — the
+  // whole point is speed for back-to-back clips from the same creator.
+  function selectTemplate(id: string) {
+    setTemplateId(id);
+    if (typeof window !== "undefined") {
+      if (id === NO_TEMPLATE) localStorage.removeItem(LAST_TEMPLATE_KEY);
+      else localStorage.setItem(LAST_TEMPLATE_KEY, id);
+    }
+    void regenerate(id);
+  }
+
   function toggle(id: string) {
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   }
@@ -96,7 +139,14 @@ export function ScheduleModal({ clip, onClose }: { clip: Clip; onClose: () => vo
       setResult("Select at least one account.");
       return;
     }
-    setSubmitting(true);
+    // Scheduling requires an explicit date/time. Without one, an absent `scheduledFor`
+    // makes the server treat the request as publish-now (which is gated), so the button
+    // would silently do nothing while reporting a false "Scheduled" success.
+    if (!publishNow && !when) {
+      setResult("Pick a date and time to schedule, or use Publish now.");
+      return;
+    }
+    setSubmitting(publishNow ? "publish" : "schedule");
     setResult("");
     try {
       const res = await fetch("/api/clip/social/schedule", {
@@ -106,26 +156,35 @@ export function ScheduleModal({ clip, onClose }: { clip: Clip; onClose: () => vo
           clipId: clip.id,
           accountIds: selected,
           caption,
-          scheduledFor: publishNow ? undefined : when || undefined,
+          scheduledFor: publishNow ? undefined : when,
         }),
       });
       const data = await res.json();
       if (!res.ok) {
         setResult(data.error || "Failed.");
       } else {
-        const statuses = (data.results || []).map(
-          (r: { post: { status: string; error?: string } }) => r.post.error || r.post.status
+        const posts: { status: string; error?: string }[] = (data.results || []).map(
+          (r: { post: { status: string; error?: string } }) => r.post
         );
-        setResult(
-          publishNow
-            ? `Publish: ${statuses.join(", ")}`
-            : `Scheduled for ${when || "next slot"}.`
-        );
+        // Surface real per-account failures (publish gate, missing account, …) instead of
+        // claiming success unconditionally.
+        const failed = posts.filter((p) => p.status === "failed" || p.error);
+        if (failed.length) {
+          setResult(failed.map((p) => p.error || p.status).join(", "));
+        } else if (publishNow) {
+          setResult(`Publish: ${posts.map((p) => p.status).join(", ")}`);
+        } else {
+          setResult(
+            `Scheduled ${posts.length} post${posts.length === 1 ? "" : "s"} for ${new Date(
+              when
+            ).toLocaleString()}.`
+          );
+        }
       }
     } catch {
       setResult("Request failed.");
     } finally {
-      setSubmitting(false);
+      setSubmitting(null);
     }
   }
 
@@ -203,6 +262,28 @@ export function ScheduleModal({ clip, onClose }: { clip: Clip; onClose: () => vo
 
           {/* Caption + controls */}
           <div className="space-y-3">
+            {/* Caption template: reusable per-creator context, applied as the base for this clip */}
+            <div className="flex items-center gap-2">
+              <LayoutTemplate className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <Select value={templateId} onValueChange={selectTemplate}>
+                <SelectTrigger size="sm" className="w-auto min-w-[160px] flex-1">
+                  <SelectValue placeholder="No template" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_TEMPLATE}>No template</SelectItem>
+                  {templates.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                      {t.creator ? ` · ${t.creator}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm" onClick={() => setManagerOpen(true)}>
+                <LayoutTemplate className="h-3.5 w-3.5" /> Templates
+              </Button>
+            </div>
+
             <div className="flex flex-wrap items-center gap-2">
               <Select value={tone || undefined} onValueChange={setTone}>
                 <SelectTrigger size="sm" className="w-auto min-w-[90px]">
@@ -232,7 +313,7 @@ export function ScheduleModal({ clip, onClose }: { clip: Clip; onClose: () => vo
                 # Hashtags
               </Button>
               <Button
-                onClick={regenerate}
+                onClick={() => regenerate()}
                 disabled={generating}
                 variant="outline"
                 size="sm"
@@ -262,18 +343,19 @@ export function ScheduleModal({ clip, onClose }: { clip: Clip; onClose: () => vo
               </div>
               <Button
                 onClick={() => submit(false)}
-                disabled={submitting}
+                disabled={submitting !== null}
                 variant="outline"
                 className="ml-auto"
               >
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calendar className="h-4 w-4" />}
+                {submitting === "schedule" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calendar className="h-4 w-4" />}
                 Schedule
               </Button>
               <Button
                 onClick={() => submit(true)}
-                disabled={submitting}
+                disabled={submitting !== null}
               >
-                <Send className="h-4 w-4" /> Publish now
+                {submitting === "publish" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Publish now
               </Button>
             </div>
 
@@ -281,6 +363,17 @@ export function ScheduleModal({ clip, onClose }: { clip: Clip; onClose: () => vo
           </div>
         </div>
       </DialogContent>
+
+      <CaptionTemplatesManager
+        open={managerOpen}
+        onClose={() => setManagerOpen(false)}
+        onTemplatesChange={(list) => {
+          setTemplates(list);
+          // If the selected template was deleted, fall back to "No template".
+          setTemplateId((cur) => (cur !== NO_TEMPLATE && !list.some((t) => t.id === cur) ? NO_TEMPLATE : cur));
+        }}
+        onApply={selectTemplate}
+      />
     </Dialog>
   );
 }

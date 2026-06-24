@@ -87,6 +87,8 @@ A self-contained second pipeline under `lib/clip/` + `app/clip/` + `api/clip/`, 
 5. **Persist & stream** (`clipPipeline.ts`, `api/clip`) — jobs → `data/clip-jobs.json`, clips → `data/clips.csv`, mp4s/thumbs → `data/clips/`. Progress streams over SSE; closing the modal keeps the job running and `/clip/[jobId]` polls until done.
 6. **Schedule** (`social/instagram.ts`) — Meta OAuth connect + AI caption generation work now; live IG publishing is implemented but gated behind `enableSocialPublish` until Meta App Review.
 
+**Caption templates** (reusable per-creator context): the Schedule dialog (`components/clip/schedule-modal.tsx`) has a template selector + a **Templates** manager (`components/clip/caption-templates-manager.tsx`, create/edit/duplicate/delete). A `CaptionPromptTemplate` (`lib/types.ts`) holds the *fixed* creator context (bio, niche, audience, achievements, follower count, CTA, hashtags, brand voice) that stays identical across every clip, so generated captions only vary by the per-clip variables (title, topic, hook). Persisted in `data/caption-prompt-templates.json` via `store.ts` (`read/write/upsert/delete/getCaptionPromptTemplate`) — independent of projects/jobs, reusable across creators. CRUD route: `api/clip/social/caption-templates` (GET/POST/PATCH/DELETE). `POST /api/clip/social/caption` takes a `templateId` and uses the template as the base context. The last-used template is remembered in `localStorage` (`clip:lastCaptionTemplate`) and selecting one auto-regenerates. **Note:** distinct from the visual `CaptionTemplate` (an on-screen caption *style* preset).
+
 **Scope note:** v1 ships center/face-anchored crop (not speaker-tracked reframe). The Edit-clip studio (Phase 2) is now built.
 
 ### Clip Editor (Phase 2: timeline editor)
