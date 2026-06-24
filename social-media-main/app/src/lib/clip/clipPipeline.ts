@@ -132,13 +132,13 @@ export async function runClipPipeline(
       sourcePath = res.path;
       if (res.meta.durationSec) job.sourceDurationSec = res.meta.durationSec;
     } else if (job.sourceUrl) {
-      const { ytDlpCookiesBrowser } = readSettings();
+      const { ytDlpCookiesBrowser, ytDlpCookiesText } = readSettings();
       const res = await downloadVideo(job.sourceUrl, job.id, (line) => {
         // line looks like "Downloading 45.2%" — keep the decimal so percent is accurate.
         const pct = parseFloat(line.match(/([\d.]+)/)?.[1] ?? "0") || 0;
         progress.percent = Math.min(20, 5 + Math.round(pct * 0.15));
         emit();
-      }, ytDlpCookiesBrowser || undefined);
+      }, ytDlpCookiesBrowser || undefined, ytDlpCookiesText || undefined);
       sourcePath = res.path;
       if (res.meta.durationSec) job.sourceDurationSec = res.meta.durationSec;
     } else {

@@ -27,6 +27,7 @@ export async function POST(req: Request) {
     defaultAspectRatio: body.defaultAspectRatio ?? "9:16",
     defaultClipLength: body.defaultClipLength ?? "Auto (0-3m)",
     ytDlpCookiesBrowser: body.ytDlpCookiesBrowser ?? "",
+    ytDlpCookiesText: body.ytDlpCookiesText ?? "",
     metaAppId: body.metaAppId ?? "",
     metaAppSecret: body.metaAppSecret ?? "",
     enableSocialPublish: body.enableSocialPublish ?? false,

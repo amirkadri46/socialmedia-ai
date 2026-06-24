@@ -10,8 +10,8 @@ export async function POST(request: Request) {
     if (!url || !/^https?:\/\//.test(url)) {
       return NextResponse.json({ error: "A valid http(s) URL is required." }, { status: 400 });
     }
-    const { ytDlpCookiesBrowser } = readSettings();
-    const meta = await inspect(url, ytDlpCookiesBrowser || undefined);
+    const { ytDlpCookiesBrowser, ytDlpCookiesText } = readSettings();
+    const meta = await inspect(url, ytDlpCookiesBrowser || undefined, ytDlpCookiesText || undefined);
     return NextResponse.json(meta);
   } catch (err) {
     return NextResponse.json(

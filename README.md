@@ -265,7 +265,8 @@ All stored in data/settings.json, managed at /settings.
 | assemblyaiApiKey | Alternative transcription provider |
 | metaAppId / metaAppSecret | Instagram OAuth for social publishing (off by default) |
 | linkedinCharLimit | Max LinkedIn DM length enforced by the draft prompt (default: 200) |
-| ytDlpCookiesBrowser | Browser for yt-dlp cookie extraction to bypass YouTube bot detection |
+| ytDlpCookiesBrowser | Local-only: browser for yt-dlp cookie extraction. Does not work on Railway/servers (no browser installed) |
+| ytDlpCookiesText | Pasted YouTube cookies.txt (Netscape format) passed to yt-dlp via `--cookies`. The fix for "Sign in to confirm you're not a bot" on hosted deploys; takes priority over the browser option |
 
 ---
 

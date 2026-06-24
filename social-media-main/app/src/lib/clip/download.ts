@@ -17,16 +17,44 @@ function jobDir(jobId: string): string {
 }
 
 /**
+ * Build the yt-dlp cookie args. A pasted cookies.txt (Netscape format) is the
+ * only thing that works on a server like Railway, where no browser is installed
+ * for `--cookies-from-browser`. The file takes priority; the browser is a local
+ * fallback. Without one of these, YouTube blocks datacenter IPs with the
+ * "Sign in to confirm you're not a bot" error.
+ */
+function cookieArgs(cookiesBrowser?: string, cookiesText?: string): string[] {
+  // Env var wins on hosted deploys (Railway): it survives redeploys, unlike the
+  // settings.json textarea which lives on an ephemeral filesystem.
+  const text = (cookiesText && cookiesText.trim()) ? cookiesText : process.env.YTDLP_COOKIES;
+  if (text && text.trim()) {
+    const cookiesText = text; // shadow so the block below is unchanged
+    const dir = tmpRoot();
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "yt-cookies.txt");
+    // yt-dlp requires a leading Netscape header and LF line endings.
+    let body = cookiesText.replace(/\r\n/g, "\n").trim();
+    if (!body.startsWith("# Netscape HTTP Cookie File") && !body.startsWith("# HTTP Cookie File")) {
+      body = `# Netscape HTTP Cookie File\n${body}`;
+    }
+    writeFileSync(file, `${body}\n`, "utf-8");
+    return ["--cookies", file];
+  }
+  if (cookiesBrowser) return ["--cookies-from-browser", cookiesBrowser];
+  return [];
+}
+
+/**
  * Fetch metadata for a remote video URL without downloading it.
  * Mirrors OpusClip's "fetch video" step — used by the configure screen.
  */
-export async function inspect(url: string, cookiesBrowser?: string): Promise<SourceMeta> {
+export async function inspect(url: string, cookiesBrowser?: string, cookiesText?: string): Promise<SourceMeta> {
   if (!(await ytDlpAvailable())) {
     throw new Error(
       "yt-dlp is not installed. Install it (brew install yt-dlp / pip install yt-dlp / winget install yt-dlp) or set YT_DLP_PATH. See Settings for details."
     );
   }
-  const cookiesArgs = cookiesBrowser ? ["--cookies-from-browser", cookiesBrowser] : [];
+  const cookiesArgs = cookieArgs(cookiesBrowser, cookiesText);
   const { stdout } = await run(ytDlpPath(), [
     "--dump-single-json",
     "--no-warnings",
@@ -52,7 +80,8 @@ export async function downloadVideo(
   url: string,
   jobId: string,
   onProgress?: (line: string) => void,
-  cookiesBrowser?: string
+  cookiesBrowser?: string,
+  cookiesText?: string
 ): Promise<{ path: string; meta: SourceMeta }> {
   if (!(await ytDlpAvailable())) {
     throw new Error(
@@ -61,7 +90,7 @@ export async function downloadVideo(
   }
   const dir = jobDir(jobId);
   const outTemplate = path.join(dir, "source.%(ext)s");
-  const cookiesArgs = cookiesBrowser ? ["--cookies-from-browser", cookiesBrowser] : [];
+  const cookiesArgs = cookieArgs(cookiesBrowser, cookiesText);
 
   await run(
     ytDlpPath(),

@@ -27,6 +27,7 @@ export interface AppSettings {
   defaultAspectRatio: string;
   defaultClipLength: string;
   ytDlpCookiesBrowser: string;
+  ytDlpCookiesText: string;
   // Social
   metaAppId: string;
   metaAppSecret: string;
@@ -55,6 +56,7 @@ const DEFAULTS: AppSettings = {
   defaultAspectRatio: "9:16",
   defaultClipLength: "Auto (0-3m)",
   ytDlpCookiesBrowser: "",
+  ytDlpCookiesText: "",
   // Social
   metaAppId: "",
   metaAppSecret: "",
