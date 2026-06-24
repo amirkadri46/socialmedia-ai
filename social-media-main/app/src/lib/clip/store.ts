@@ -10,6 +10,7 @@ import type {
   Word,
   ClipEdit,
   CaptionTemplate,
+  CaptionPromptTemplate,
   ClipProgress,
 } from "../types";
 import { presetToCaptionConfig } from "./caption-styles";
@@ -26,6 +27,7 @@ const POSTS_PATH = path.join(DATA_DIR, "scheduled-posts.json");
 const EDITS_DIR = path.join(DATA_DIR, "clip-edits");
 const TRANSCRIPTS_DIR = path.join(DATA_DIR, "clip-transcripts");
 const CAPTION_TEMPLATES_PATH = path.join(DATA_DIR, "caption-templates.json");
+const CAPTION_PROMPT_TEMPLATES_PATH = path.join(DATA_DIR, "caption-prompt-templates.json");
 
 function ensureDataDir() {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
@@ -336,4 +338,40 @@ export function readCaptionTemplates(): CaptionTemplate[] {
 export function writeCaptionTemplates(templates: CaptionTemplate[]): void {
   ensureDataDir();
   writeFileSync(CAPTION_TEMPLATES_PATH, JSON.stringify(templates, null, 2), "utf-8");
+}
+
+// ── Caption prompt templates (reusable per-creator caption context) ─────────────────
+// Distinct from the visual CaptionTemplate above: these hold the reusable text context
+// (creator bio, niche, audience, CTA, hashtags, brand voice) that the caption generator
+// uses as the fixed base for every clip from that creator. Persisted independent of any
+// project/job so they are reusable across creators and clips.
+
+export function readCaptionPromptTemplates(): CaptionPromptTemplate[] {
+  if (!existsSync(CAPTION_PROMPT_TEMPLATES_PATH)) return [];
+  try {
+    return JSON.parse(readFileSync(CAPTION_PROMPT_TEMPLATES_PATH, "utf-8")) as CaptionPromptTemplate[];
+  } catch {
+    return [];
+  }
+}
+
+export function writeCaptionPromptTemplates(templates: CaptionPromptTemplate[]): void {
+  ensureDataDir();
+  writeFileAtomic(CAPTION_PROMPT_TEMPLATES_PATH, JSON.stringify(templates, null, 2));
+}
+
+export function getCaptionPromptTemplate(id: string): CaptionPromptTemplate | undefined {
+  return readCaptionPromptTemplates().find((t) => t.id === id);
+}
+
+export function upsertCaptionPromptTemplate(template: CaptionPromptTemplate): void {
+  const templates = readCaptionPromptTemplates();
+  const idx = templates.findIndex((t) => t.id === template.id);
+  if (idx >= 0) templates[idx] = template;
+  else templates.unshift(template);
+  writeCaptionPromptTemplates(templates);
+}
+
+export function deleteCaptionPromptTemplate(id: string): void {
+  writeCaptionPromptTemplates(readCaptionPromptTemplates().filter((t) => t.id !== id));
 }

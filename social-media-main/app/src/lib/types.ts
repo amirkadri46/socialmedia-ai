@@ -473,6 +473,28 @@ export interface CaptionTemplate {
   createdAt: string;
 }
 
+/**
+ * A reusable caption *context* template — typically one per creator. It holds the
+ * persistent brand/creator context (bio, niche, audience, achievements, follower count,
+ * CTA, hashtags, brand voice) that stays the SAME across every clip, so generated captions
+ * only vary by the per-clip variables (title, topic, hook). This is distinct from the
+ * visual `CaptionTemplate` above (which stores an on-screen caption STYLE). Persisted in
+ * data/caption-prompt-templates.json — independent of any project/job, so it is reusable
+ * across creators and clips.
+ */
+export interface CaptionPromptTemplate {
+  id: string;
+  name: string; // e.g. "@speed"
+  creator?: string; // the creator handle/name this template represents
+  context: string; // bio, niche, audience, achievements, follower count — the persistent base context
+  brandVoice?: string; // tone / voice guidance
+  cta?: string; // call to action to weave into captions
+  hashtags?: string; // default hashtag set
+  includeHashtags: boolean; // append the hashtag set to generated captions
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Auto blurred background (Fit mode): when the video doesn't fill the canvas, the empty
 // area is filled with a strongly-blurred, cover-scaled copy of the SAME source frame
 // (updated every frame in preview, mirrored in export). Honored only for single-layout
