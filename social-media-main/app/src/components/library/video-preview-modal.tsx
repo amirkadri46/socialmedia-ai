@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -27,6 +27,9 @@ export function VideoPreviewModal({ videoId, onClose, onDeleted }: VideoPreviewM
   const [captionError, setCaptionError] = useState<string>("");
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [splitPct, setSplitPct] = useState(52);
+  const dragging = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!videoId) { setDetail(null); setDetailError(""); setCaption(""); setCaptionError(""); return; }
@@ -40,6 +43,22 @@ export function VideoPreviewModal({ videoId, onClose, onDeleted }: VideoPreviewM
       })
       .catch(() => setDetailError("Network error"));
   }, [videoId]);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragging.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      setSplitPct(Math.max(25, Math.min(75, pct)));
+    };
+    const onUp = () => { dragging.current = false; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
 
   const generateCaption = async () => {
     if (!videoId) return;
@@ -72,15 +91,15 @@ export function VideoPreviewModal({ videoId, onClose, onDeleted }: VideoPreviewM
 
   return (
     <Dialog open={!!videoId} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-4xl p-0 overflow-hidden">
+      <DialogContent className="max-w-5xl w-[90vw] p-0 overflow-hidden">
         {detail ? (
-          <div className="flex flex-col sm:flex-row">
+          <div className="flex" ref={containerRef} style={{ userSelect: dragging.current ? "none" : undefined }}>
             {/* Left — video */}
-            <div className="sm:w-[60%] bg-black flex flex-col">
+            <div className="bg-black flex flex-col min-w-0" style={{ width: `${splitPct}%` }}>
               {detail.video_url ? (
-                <video controls src={detail.video_url} className="w-full" style={{ maxHeight: 480 }} />
+                <video controls src={detail.video_url} className="w-full object-contain" style={{ maxHeight: 280 }} />
               ) : (
-                <div className="w-full flex items-center justify-center bg-zinc-900 text-zinc-500 text-sm" style={{ minHeight: 200 }}>
+                <div className="w-full flex items-center justify-center bg-zinc-900 text-zinc-500 text-sm" style={{ minHeight: 160 }}>
                   Video file not available
                 </div>
               )}
@@ -101,8 +120,14 @@ export function VideoPreviewModal({ videoId, onClose, onDeleted }: VideoPreviewM
               </div>
             </div>
 
+            {/* Drag handle */}
+            <div
+              className="w-1.5 shrink-0 cursor-col-resize bg-border hover:bg-primary/40 transition-colors"
+              onMouseDown={() => { dragging.current = true; }}
+            />
+
             {/* Right — caption + actions */}
-            <div className="sm:w-[40%] flex flex-col gap-4 p-4 border-l border-border">
+            <div className="flex flex-col gap-4 p-4 overflow-y-auto min-w-0" style={{ width: `${100 - splitPct}%`, maxHeight: 480 }}>
               <p className="text-sm font-semibold">Caption</p>
               {captionError && <p className="text-xs text-destructive">{captionError}</p>}
               {caption ? (
