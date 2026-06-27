@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Sun, Moon } from "lucide-react";
 import { Show, UserButton } from "@clerk/nextjs";
@@ -22,9 +22,7 @@ export function TopBar() {
   const pathname = usePathname();
   const title = pageTitles[pathname] || "Virality System";
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => setMounted(true), []);
+  const mounted = useSyncExternalStore(() => () => {}, () => true, () => false);
 
   return (
     <div className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b border-black/[0.06] dark:border-white/[0.06] bg-background/80 px-6 backdrop-blur-xl">

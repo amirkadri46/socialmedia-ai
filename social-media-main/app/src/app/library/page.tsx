@@ -39,7 +39,7 @@ export default function LibraryPage() {
       .finally(() => setLoading(false));
   }, [filters]);
 
-  useEffect(fetchVideos, [fetchVideos]);
+  useEffect(() => { queueMicrotask(() => void fetchVideos()); }, [fetchVideos]);
 
   return (
     <div className="flex flex-col gap-6 p-6">

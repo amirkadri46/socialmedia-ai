@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { repos } from "@/lib/db";
 import { scrapeCreatorStats } from "@/lib/apify";
 

@@ -62,7 +62,8 @@ export async function PUT(request: Request) {
     const creators = await repos.creators.getAll();
     const existing = creators.find((c) => c.id === body.id);
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const { id, ...rest } = body;
+    const { id: _id, ...rest } = body;
+    void _id;
     const updated = { ...existing, ...rest, id: existing.id };
     await repos.creators.upsertByUsername(updated);
     return NextResponse.json(updated);

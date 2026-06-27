@@ -1,7 +1,6 @@
 import type { ClipJob, ClipProgress } from "@/lib/types";
 import {
   readJobs,
-  writeJobs,
   upsertJob as fileUpsertJob,
   getJob as fileGetJob,
   setLiveProgress as fileSetProgress,

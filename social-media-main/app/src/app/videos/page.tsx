@@ -96,16 +96,6 @@ function VideosContent() {
     e.stopPropagation();
   };
 
-  // Reset custom order when filters or sort change
-  useEffect(() => {
-    setCustomOrder(null);
-  }, [filterConfig, filterCreator, sortBy]);
-
-  // Reset creator filter when config changes so a cross-config creator can't stay selected
-  useEffect(() => {
-    setFilterCreator("all");
-  }, [filterConfig]);
-
   const uniqueCreators = useMemo(() => [
     ...new Set(
       videos
@@ -217,7 +207,14 @@ function VideosContent() {
 
       {/* Filters & Sort */}
       <div className="flex flex-wrap items-center gap-3">
-        <Select value={filterConfig} onValueChange={setFilterConfig}>
+        <Select
+          value={filterConfig}
+          onValueChange={(value) => {
+            setFilterConfig(value);
+            setFilterCreator("all");
+            setCustomOrder(null);
+          }}
+        >
           <SelectTrigger className="w-[220px] rounded-xl glass border-white/[0.08] h-10">
             <SelectValue placeholder="Filter by config" />
           </SelectTrigger>
@@ -229,7 +226,13 @@ function VideosContent() {
           </SelectContent>
         </Select>
 
-        <Select value={filterCreator} onValueChange={setFilterCreator}>
+        <Select
+          value={filterCreator}
+          onValueChange={(value) => {
+            setFilterCreator(value);
+            setCustomOrder(null);
+          }}
+        >
           <SelectTrigger className="w-[200px] rounded-xl glass border-white/[0.08] h-10">
             <SelectValue placeholder="Filter by creator" />
           </SelectTrigger>
@@ -241,7 +244,13 @@ function VideosContent() {
           </SelectContent>
         </Select>
 
-        <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+        <Select
+          value={sortBy}
+          onValueChange={(v) => {
+            setSortBy(v as SortOption);
+            setCustomOrder(null);
+          }}
+        >
           <SelectTrigger className="w-[180px] rounded-xl glass border-white/[0.08] h-10">
             <ArrowUpDown className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
             <SelectValue />

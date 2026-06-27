@@ -5,6 +5,15 @@ import type { DownloadJob } from "@/lib/downloader/types";
 
 const ACTIVE = new Set(["waiting", "inspecting", "downloading", "retrying"]);
 
+function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium text-foreground">{value}</span>
+    </span>
+  );
+}
+
 export function StatusBar({ jobs }: { jobs: DownloadJob[] }) {
   const downloaded = jobs.filter((j) => j.status === "completed").length;
   const failed = jobs.filter((j) => j.status === "failed").length;
@@ -14,13 +23,6 @@ export function StatusBar({ jobs }: { jobs: DownloadJob[] }) {
   const totalSpeed = jobs
     .filter((j) => j.status === "downloading")
     .reduce((sum, j) => sum + (parseFloat(j.speed) || 0), 0);
-
-  const Stat = ({ label, value }: { label: string; value: React.ReactNode }) => (
-    <span className="flex items-center gap-1.5">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium text-foreground">{value}</span>
-    </span>
-  );
 
   return (
     <div

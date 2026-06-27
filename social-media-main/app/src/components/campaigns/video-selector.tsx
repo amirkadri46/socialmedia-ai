@@ -84,6 +84,8 @@ export function VideoSelector({ selectedIds, onChange }: Props) {
               onCheckedChange={() => toggle(v.id)}
             />
             {v.thumbnail_url ? (
+              // Signed storage URLs are already size-bounded thumbnails; next/image remote config would add churn here.
+              // eslint-disable-next-line @next/next/no-img-element
               <img src={v.thumbnail_url} alt="" className="w-8 h-12 object-cover rounded shrink-0" />
             ) : (
               <div className="w-8 h-12 bg-zinc-800 rounded shrink-0 flex items-center justify-center">

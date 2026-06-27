@@ -47,16 +47,18 @@ export function useLeadFilters(listId: string, prospects: Prospect[]) {
 
   // Load persisted filters when the active list changes.
   useEffect(() => {
+    let next = EMPTY_FILTERS;
     if (!listId) {
-      setFilters(EMPTY_FILTERS);
+      queueMicrotask(() => setFilters(next));
       return;
     }
     try {
       const raw = localStorage.getItem(`lead-filters:${listId}`);
-      setFilters(raw ? { ...EMPTY_FILTERS, ...JSON.parse(raw) } : EMPTY_FILTERS);
+      next = raw ? { ...EMPTY_FILTERS, ...JSON.parse(raw) } : EMPTY_FILTERS;
     } catch {
-      setFilters(EMPTY_FILTERS);
+      next = EMPTY_FILTERS;
     }
+    queueMicrotask(() => setFilters(next));
   }, [listId]);
 
   // Persist on change.

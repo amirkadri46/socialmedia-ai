@@ -1,7 +1,6 @@
 import type { CaptionPromptTemplate } from "@/lib/types";
 import {
   readCaptionPromptTemplates,
-  writeCaptionPromptTemplates,
   getCaptionPromptTemplate as fileGet,
   upsertCaptionPromptTemplate as fileUpsert,
   deleteCaptionPromptTemplate as fileDelete,

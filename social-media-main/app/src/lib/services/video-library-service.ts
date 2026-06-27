@@ -23,13 +23,17 @@ export const videoLibraryService = {
   async listVideos(filters?: VideoFilters): Promise<VideoWithUrls[]> {
     const storage = getStorageProvider();
     const videos = await videoRepository.findAll(filters);
+    const thumbObjects = await storageObjectRepository.findByIds(
+      videos.map((v) => v.thumbnail_object_id).filter(Boolean) as string[]
+    );
+    const thumbKeys = new Map(thumbObjects.map((obj) => [obj.id, obj.key]));
 
     return Promise.all(
       videos.map(async (v) => {
         let thumbnail_url: string | null = null;
         if (v.thumbnail_object_id) {
-          const thumbObj = await storageObjectRepository.findById(v.thumbnail_object_id);
-          if (thumbObj?.key) thumbnail_url = await storage.getSignedUrl(thumbObj.key, 3600);
+          const key = thumbKeys.get(v.thumbnail_object_id);
+          if (key) thumbnail_url = await storage.getSignedUrl(key, 3600);
         }
         return {
           id: v.id,
@@ -53,14 +57,18 @@ export const videoLibraryService = {
 
     let thumbnail_url: string | null = null;
     let video_url = "";
+    const objects = await storageObjectRepository.findByIds(
+      [video.thumbnail_object_id, video.storage_object_id].filter(Boolean) as string[]
+    );
+    const objectById = new Map(objects.map((obj) => [obj.id, obj]));
 
     if (video.thumbnail_object_id) {
-      const thumbObj = await storageObjectRepository.findById(video.thumbnail_object_id);
+      const thumbObj = objectById.get(video.thumbnail_object_id);
       if (thumbObj?.key) thumbnail_url = await storage.getSignedUrl(thumbObj.key, 3600);
     }
 
     if (video.storage_object_id) {
-      const vidObj = await storageObjectRepository.findById(video.storage_object_id);
+      const vidObj = objectById.get(video.storage_object_id);
       if (vidObj?.key) video_url = await storage.getSignedUrl(vidObj.key, 21600);
     }
 
@@ -85,16 +93,20 @@ export const videoLibraryService = {
     const storage = getStorageProvider();
     const video = await videoRepository.findById(id);
     if (!video) return;
+    const objects = await storageObjectRepository.findByIds(
+      [video.storage_object_id, video.thumbnail_object_id].filter(Boolean) as string[]
+    );
+    const objectById = new Map(objects.map((obj) => [obj.id, obj]));
 
     if (video.storage_object_id) {
-      const obj = await storageObjectRepository.findById(video.storage_object_id);
+      const obj = objectById.get(video.storage_object_id);
       if (obj) {
         await storage.delete(obj.key);
         await storageObjectRepository.markDeleted(obj.id);
       }
     }
     if (video.thumbnail_object_id) {
-      const obj = await storageObjectRepository.findById(video.thumbnail_object_id);
+      const obj = objectById.get(video.thumbnail_object_id);
       if (obj) {
         await storage.delete(obj.key);
         await storageObjectRepository.markDeleted(obj.id);

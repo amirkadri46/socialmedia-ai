@@ -13,7 +13,7 @@ export interface VideoFilters {
 
 export const videoRepository = {
   async findAll(filters: VideoFilters = {}): Promise<Video[]> {
-    let q = supabaseServer.from("videos").select("*");
+    let q = supabaseServer.from("pub_videos").select("*");
     if (filters.platform) q = q.eq("platform", filters.platform);
     if (filters.storage_status) q = q.eq("storage_status", filters.storage_status);
     if (filters.publish_status) q = q.eq("publish_status", filters.publish_status);
@@ -35,11 +35,22 @@ export const videoRepository = {
     return data ?? null;
   },
 
+  async findByIds(ids: string[]): Promise<Video[]> {
+    const uniqueIds = [...new Set(ids)].filter(Boolean);
+    if (uniqueIds.length === 0) return [];
+    const { data, error } = await supabaseServer
+      .from("pub_videos")
+      .select("*")
+      .in("id", uniqueIds);
+    if (error) throw new Error(`videoRepository.findByIds: ${error.message}`);
+    return data ?? [];
+  },
+
   async findByChecksum(checksum: string): Promise<{ videoId: string } | null> {
     const { data } = await supabaseServer
       .from("pub_videos")
-      .select("id, storage_objects!storage_object_id(checksum)")
-      .eq("storage_objects.checksum", checksum)
+      .select("id, pub_storage_objects!storage_object_id(checksum)")
+      .eq("pub_storage_objects.checksum", checksum)
       .eq("storage_status", "available")
       .limit(1)
       .single();
@@ -87,7 +98,7 @@ export const videoRepository = {
   },
 
   async countAll(filters: Omit<VideoFilters, "limit" | "offset"> = {}): Promise<number> {
-    let q = supabaseServer.from("videos").select("*", { count: "exact", head: true });
+    let q = supabaseServer.from("pub_videos").select("*", { count: "exact", head: true });
     if (filters.platform) q = q.eq("platform", filters.platform);
     if (filters.storage_status) q = q.eq("storage_status", filters.storage_status);
     if (filters.publish_status) q = q.eq("publish_status", filters.publish_status);

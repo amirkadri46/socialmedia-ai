@@ -22,6 +22,17 @@ export const storageObjectRepository = {
     return data ?? null;
   },
 
+  async findByIds(ids: string[]): Promise<StorageObject[]> {
+    const uniqueIds = [...new Set(ids)].filter(Boolean);
+    if (uniqueIds.length === 0) return [];
+    const { data, error } = await supabaseServer
+      .from("pub_storage_objects")
+      .select("*")
+      .in("id", uniqueIds);
+    if (error) throw new Error(`storageObjectRepository.findByIds: ${error.message}`);
+    return data ?? [];
+  },
+
   async create(
     input: Omit<StorageObject, "id" | "created_at" | "deleted_at" | "version" | "is_current">
   ): Promise<StorageObject> {

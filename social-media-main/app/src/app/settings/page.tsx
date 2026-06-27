@@ -194,7 +194,7 @@ export default function SettingsPage() {
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
+    } catch {
       alert("Failed to save settings");
     } finally {
       setLoading(false);

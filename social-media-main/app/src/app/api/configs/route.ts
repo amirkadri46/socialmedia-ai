@@ -35,7 +35,8 @@ export async function PUT(request: Request) {
     const configs = await repos.configs.getAll();
     const existing = configs.find((c) => c.id === body.id);
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const { id, ...rest } = body;
+    const { id: _id, ...rest } = body;
+    void _id;
     const updated = { ...existing, ...rest, id: existing.id };
     await repos.configs.upsert(updated);
     return NextResponse.json(updated);

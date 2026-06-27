@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -224,12 +225,12 @@ export function ScheduleModal({ clip, onClose }: { clip: Clip; onClose: () => vo
               )}
             </div>
             {accounts.length === 0 && (
-              <a
+              <Link
                 href="/clip/social"
                 className="flex items-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <Plus className="h-4 w-4" /> Connect an account
-              </a>
+              </Link>
             )}
             {accounts.map((a) => {
               const isSel = selected.includes(a.id);

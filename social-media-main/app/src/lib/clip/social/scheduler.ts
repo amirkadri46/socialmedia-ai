@@ -1,5 +1,6 @@
 import { repos } from "../../db";
 import { publishReel } from "./instagram";
+import { buildSignedClipMediaUrl } from "./media-url";
 
 /**
  * Publish any scheduled posts whose `scheduledFor` time has arrived.
@@ -39,7 +40,7 @@ export async function processDuePosts(): Promise<{ processed: number; published:
       try {
         if (!clip) throw new Error("Clip not found.");
         if (!account) throw new Error("Account not found — it may have been disconnected.");
-        const publicUrl = `${appBase}/api/clip/media/${clip.id}`;
+        const publicUrl = buildSignedClipMediaUrl(appBase, clip.id);
         await publishReel(account.igUserId!, account.accessToken, publicUrl, post.caption);
         post.status = "published";
         post.error = undefined;

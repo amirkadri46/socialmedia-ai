@@ -91,6 +91,10 @@ export const supabaseSocialAccounts: SocialAccountsRepo = {
   },
   async public() {
     const all = await supabaseSocialAccounts.getAll();
-    return all.map(({ accessToken: _omit, ...rest }) => rest);
+    return all.map((account) => {
+      const rest = { ...account };
+      delete (rest as Partial<SocialAccount>).accessToken;
+      return rest;
+    });
   },
 };

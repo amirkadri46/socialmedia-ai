@@ -4,8 +4,8 @@ import { repos } from "@/lib/db";
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const accountIds = await campaignRepository.getAccounts(id);
-  const accounts = await Promise.all(accountIds.map((aid) => accountRepository.findById(aid)));
-  return Response.json(accounts.filter(Boolean));
+  const accounts = await accountRepository.findByIds(accountIds);
+  return Response.json(accounts);
 }
 
 // Bridge: account IDs from /api/accounts come from social-accounts.json (clip pipeline).
@@ -32,7 +32,10 @@ async function resolveToPublishingAccountId(accountId: string): Promise<string> 
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { accountId } = await req.json();
+  const { accountId } = await req.json().catch(() => ({}));
+  if (typeof accountId !== "string" || !accountId) {
+    return Response.json({ error: "accountId is required." }, { status: 400 });
+  }
   const pubAccountId = await resolveToPublishingAccountId(accountId);
   await campaignRepository.addAccount(id, pubAccountId);
   return Response.json({ ok: true });
@@ -40,7 +43,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { accountId } = await req.json();
+  const { accountId } = await req.json().catch(() => ({}));
+  if (typeof accountId !== "string" || !accountId) {
+    return Response.json({ error: "accountId is required." }, { status: 400 });
+  }
   await campaignRepository.removeAccount(id, accountId);
   return Response.json({ ok: true });
 }

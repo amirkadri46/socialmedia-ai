@@ -1,6 +1,17 @@
 import { supabaseServer } from "@/lib/supabase";
 import type { PublishHistory } from "@/lib/db/types";
 
+export interface PublishHistoryWithMeta extends PublishHistory {
+  video_title: string;
+  video_thumbnail_key: string | null;
+  account_username: string;
+}
+
+type PublishHistoryJoinedRow = PublishHistory & {
+  pub_videos?: { title?: string | null; thumbnail_object_id?: string | null } | null;
+  pub_instagram_accounts?: { username?: string | null } | null;
+};
+
 export const publishHistoryRepository = {
   async insert(data: Omit<PublishHistory, "id">): Promise<void> {
     const { error } = await supabaseServer
@@ -76,7 +87,7 @@ export const publishHistoryRepository = {
     to?: string;
     limit?: number;
     offset?: number;
-  }): Promise<{ rows: any[]; total: number }> {
+  }): Promise<{ rows: PublishHistoryWithMeta[]; total: number }> {
     let query = supabaseServer
       .from("pub_publish_history")
       .select(
@@ -97,7 +108,7 @@ export const publishHistoryRepository = {
     if (error) throw new Error(`publishHistoryRepository.findWithFilters: ${error.message}`);
 
     return {
-      rows: (data ?? []).map((row: any) => ({
+      rows: ((data ?? []) as PublishHistoryJoinedRow[]).map((row) => ({
         ...row,
         video_title: row.pub_videos?.title ?? "",
         video_thumbnail_key: row.pub_videos?.thumbnail_object_id ?? null,

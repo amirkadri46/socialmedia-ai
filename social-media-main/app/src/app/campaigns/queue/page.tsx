@@ -1,11 +1,28 @@
 "use client";
 
 import { Suspense } from "react";
-import { useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Loader2 } from "lucide-react";
+import type { UploadJobWithMeta } from "@/lib/db/repositories/upload-job-repository";
 
 const PAGE_SIZE = 50;
 
@@ -42,9 +59,8 @@ function formatScheduled(iso: string) {
 
 function QueuePageInner() {
   const searchParams = useSearchParams();
-  const router = useRouter();
 
-  const [jobs, setJobs] = useState<any[]>([]);
+  const [jobs, setJobs] = useState<UploadJobWithMeta[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [campaigns, setCampaigns] = useState<{ id: string; name: string }[]>([]);
@@ -55,7 +71,8 @@ function QueuePageInner() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
-  const fetchJobs = async () => {
+  const fetchJobs = useCallback(async () => {
+    setLoading(true);
     const p = new URLSearchParams();
     if (status) p.set("status", status);
     if (campaignId) p.set("campaign_id", campaignId);
@@ -68,22 +85,19 @@ function QueuePageInner() {
     setJobs(data.jobs ?? []);
     setTotal(data.total ?? 0);
     setLoading(false);
-  };
+  }, [status, campaignId, from, to, page]);
 
   useEffect(() => {
     fetch("/api/campaigns").then((r) => r.json()).then(setCampaigns);
   }, []);
 
-  useEffect(() => {
-    setLoading(true);
-    fetchJobs();
-  }, [status, campaignId, from, to, page]);
+  useEffect(() => { queueMicrotask(() => void fetchJobs()); }, [fetchJobs]);
 
   // Auto-refresh every 15 seconds
   useEffect(() => {
     const id = setInterval(fetchJobs, 15000);
     return () => clearInterval(id);
-  }, [status, campaignId, from, to, page]);
+  }, [fetchJobs]);
 
   const counts = {
     queued: jobs.filter((j) => j.status === "queued").length,
@@ -103,36 +117,44 @@ function QueuePageInner() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap gap-3 items-center">
-        <select
-          className="text-sm bg-background border border-border rounded px-2 py-1.5"
-          value={status}
-          onChange={(e) => { setStatus(e.target.value); setPage(0); }}
+        <Select
+          value={status || "_all"}
+          onValueChange={(value) => { setStatus(value === "_all" ? "" : value); setPage(0); }}
         >
-          <option value="">All statuses</option>
+          <SelectTrigger className="w-44">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+          <SelectItem value="_all">All statuses</SelectItem>
           {ALL_STATUSES.map((s) => (
-            <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+            <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
           ))}
-        </select>
-        <select
-          className="text-sm bg-background border border-border rounded px-2 py-1.5"
-          value={campaignId}
-          onChange={(e) => { setCampaignId(e.target.value); setPage(0); }}
+          </SelectContent>
+        </Select>
+        <Select
+          value={campaignId || "_all"}
+          onValueChange={(value) => { setCampaignId(value === "_all" ? "" : value); setPage(0); }}
         >
-          <option value="">All campaigns</option>
+          <SelectTrigger className="w-52">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+          <SelectItem value="_all">All campaigns</SelectItem>
           {campaigns.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
+            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
           ))}
-        </select>
-        <input
+          </SelectContent>
+        </Select>
+        <Input
           type="date"
-          className="text-sm bg-background border border-border rounded px-2 py-1.5"
+          className="w-auto"
           value={from}
           onChange={(e) => { setFrom(e.target.value); setPage(0); }}
           placeholder="From"
         />
-        <input
+        <Input
           type="date"
-          className="text-sm bg-background border border-border rounded px-2 py-1.5"
+          className="w-auto"
           value={to}
           onChange={(e) => { setTo(e.target.value); setPage(0); }}
           placeholder="To"
@@ -173,52 +195,52 @@ function QueuePageInner() {
         </div>
       ) : (
         <>
-          <div className="rounded-lg border border-border overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground text-xs uppercase tracking-wide">
-                  <th className="text-left px-4 py-2.5">Campaign</th>
-                  <th className="text-left px-4 py-2.5">Video</th>
-                  <th className="text-left px-4 py-2.5">Account</th>
-                  <th className="text-left px-4 py-2.5">Scheduled</th>
-                  <th className="text-left px-4 py-2.5">Status</th>
-                  <th className="text-left px-4 py-2.5">Retries</th>
-                  <th className="text-left px-4 py-2.5">Error</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
+          <div className="rounded-lg border border-border">
+            <Table>
+              <TableHeader>
+                <TableRow className="text-xs uppercase tracking-wide">
+                  <TableHead className="px-4 py-2.5">Campaign</TableHead>
+                  <TableHead className="px-4 py-2.5">Video</TableHead>
+                  <TableHead className="px-4 py-2.5">Account</TableHead>
+                  <TableHead className="px-4 py-2.5">Scheduled</TableHead>
+                  <TableHead className="px-4 py-2.5">Status</TableHead>
+                  <TableHead className="px-4 py-2.5">Retries</TableHead>
+                  <TableHead className="px-4 py-2.5">Error</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {jobs.map((job) => (
-                  <tr key={job.id} className="hover:bg-muted/30">
-                    <td className="px-4 py-2.5 text-muted-foreground">{job.campaign_name || "—"}</td>
-                    <td className="px-4 py-2.5 max-w-[180px] truncate" title={job.video_title}>
+                  <TableRow key={job.id}>
+                    <TableCell className="px-4 py-2.5 text-muted-foreground">{job.campaign_name || "-"}</TableCell>
+                    <TableCell className="px-4 py-2.5 max-w-[180px] truncate" title={job.video_title}>
                       {job.video_title.slice(0, 30)}{job.video_title.length > 30 ? "…" : ""}
-                    </td>
-                    <td className="px-4 py-2.5 text-muted-foreground">@{job.account_username}</td>
-                    <td className="px-4 py-2.5 whitespace-nowrap text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="px-4 py-2.5 text-muted-foreground">@{job.account_username}</TableCell>
+                    <TableCell className="px-4 py-2.5 whitespace-nowrap text-muted-foreground">
                       {formatScheduled(job.scheduled_at)}
-                    </td>
-                    <td className="px-4 py-2.5">
+                    </TableCell>
+                    <TableCell className="px-4 py-2.5">
                       <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[job.status] ?? "bg-zinc-700 text-zinc-300"}`}>
                         {job.status === "waiting_for_instagram" && (
                           <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
                         )}
                         {STATUS_LABELS[job.status] ?? job.status}
                       </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="px-4 py-2.5 text-muted-foreground">
                       {job.retry_count > 0 ? job.retry_count : "—"}
-                    </td>
-                    <td className="px-4 py-2.5 max-w-[200px]">
+                    </TableCell>
+                    <TableCell className="px-4 py-2.5 max-w-[200px]">
                       {job.error_message ? (
                         <span className="text-red-400 text-xs truncate block" title={job.error_message}>
                           {job.error_message.slice(0, 50)}{job.error_message.length > 50 ? "…" : ""}
                         </span>
                       ) : "—"}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
 
           {/* Pagination */}

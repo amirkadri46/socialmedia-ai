@@ -57,13 +57,17 @@ export default function SocialPage() {
     const sp = new URLSearchParams(window.location.search);
     if (sp.get("connected")) {
       const handle = sp.get("connected");
-      setNotice(
-        sp.get("reconnected")
-          ? { kind: "ok", msg: `Reconnected @${handle} (token refreshed)` }
-          : { kind: "ok", msg: `Connected @${handle}` }
-      );
+      queueMicrotask(() => {
+        setNotice(
+          sp.get("reconnected")
+            ? { kind: "ok", msg: `Reconnected @${handle} (token refreshed)` }
+            : { kind: "ok", msg: `Connected @${handle}` }
+        );
+      });
     }
-    if (sp.get("error")) setNotice({ kind: "err", msg: decodeURIComponent(sp.get("error")!) });
+    if (sp.get("error")) {
+      queueMicrotask(() => setNotice({ kind: "err", msg: decodeURIComponent(sp.get("error")!) }));
+    }
     if (sp.get("connected") || sp.get("error")) {
       window.history.replaceState({}, "", "/clip/social");
     }
@@ -121,9 +125,9 @@ export default function SocialPage() {
           </h2>
           <div className="flex flex-col items-end gap-1">
             <Button asChild variant="outline">
-              <a href="/api/clip/social/connect?platform=instagram">
+              <Link href="/api/clip/social/connect?platform=instagram">
                 <Plus className="h-4 w-4" /> Add account
-              </a>
+              </Link>
             </Button>
             <p className="max-w-60 text-right text-[11px] leading-tight text-muted-foreground">
               You&apos;ll be asked to log in — switch to the Instagram account you want to add before authorizing.

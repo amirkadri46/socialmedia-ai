@@ -1,7 +1,6 @@
 import type { ScheduledPost } from "@/lib/types";
 import {
   readPosts,
-  writePosts,
   upsertPost as fileUpsertPost,
 } from "@/lib/clip/store";
 import { serverClient } from "../client";

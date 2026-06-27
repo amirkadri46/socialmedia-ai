@@ -45,6 +45,8 @@ export const VideoCard = memo(function VideoCard({ video, onPreview }: VideoCard
       onClick={() => onPreview(video)}
     >
       {video.thumbnail_url ? (
+        // Signed storage URLs are already thumbnail assets; keep native img to avoid remote image config drift.
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={video.thumbnail_url}
           alt={video.title}

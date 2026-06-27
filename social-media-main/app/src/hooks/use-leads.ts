@@ -112,7 +112,7 @@ export function useLeads() {
         setActiveList(null);
         setActiveListId("");
         await loadMetas();
-      } catch (err) {
+      } catch {
         alert("Failed to delete list");
       }
     },

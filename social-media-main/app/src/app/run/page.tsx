@@ -179,13 +179,11 @@ function PipelineProgressPanel({ progress }: { progress: PipelineProgress }) {
 const MAX_PANELS = 4;
 
 function AnalyzeVideoPanel({
-  panelId,
   configs,
   allCreators,
   onRemove,
   canRemove,
 }: {
-  panelId: string;
   configs: Config[];
   allCreators: Creator[];
   onRemove: () => void;
@@ -412,9 +410,11 @@ export default function RunPage() {
     const config = configs.find((c) => c.configName === selectedConfig);
     if (!config) return;
     const creatorsForConfig = allCreators.filter((c) => c.category === config.creatorsCategory);
-    setSelectedCreatorUsernames(new Set(creatorsForConfig.map((c) => c.username)));
-    setCreatorOverrides({});
-    setExpandedCreator(null);
+    queueMicrotask(() => {
+      setSelectedCreatorUsernames(new Set(creatorsForConfig.map((c) => c.username)));
+      setCreatorOverrides({});
+      setExpandedCreator(null);
+    });
   }, [selectedConfig, configs, allCreators]);
 
   const currentConfig = configs.find((c) => c.configName === selectedConfig);
@@ -728,7 +728,6 @@ export default function RunPage() {
           {analyzePanels.map((id) => (
             <AnalyzeVideoPanel
               key={id}
-              panelId={id}
               configs={configs}
               allCreators={allCreators}
               onRemove={() => removePanel(id)}

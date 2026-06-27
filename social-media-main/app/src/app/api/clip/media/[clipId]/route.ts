@@ -1,6 +1,8 @@
 import { existsSync, statSync, createReadStream } from "fs";
+import { auth } from "@clerk/nextjs/server";
 import { repos } from "@/lib/db";
 import { serverClient } from "@/lib/db/client";
+import { hasValidClipMediaSignature } from "@/lib/clip/social/media-url";
 import type { ReadStream } from "fs";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +15,17 @@ export async function GET(
   const { clipId } = await params;
   if (!/^[a-zA-Z0-9-]+$/.test(clipId)) {
     return new Response("Bad request", { status: 400 });
+  }
+
+  const url = new URL(req.url);
+  const isSigned = hasValidClipMediaSignature(
+    clipId,
+    url.searchParams.get("exp"),
+    url.searchParams.get("sig")
+  );
+  if (!isSigned) {
+    const { userId } = await auth();
+    if (!userId) return new Response("Unauthorized", { status: 401 });
   }
 
   const clip = await repos.clips.get(clipId);

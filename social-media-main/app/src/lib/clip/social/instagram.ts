@@ -144,10 +144,10 @@ export async function publishReel(
   let finished = false;
   for (let i = 0; i < 60; i++) {
     await new Promise((r) => setTimeout(r, 3000));
-    let status: { status_code?: string } = {};
+    let status: { status_code?: string; status?: string } = {};
     try {
       const statusRes = await fetch(
-        `${IG_GRAPH}/${containerId}?fields=status_code&access_token=${accessToken}`
+        `${IG_GRAPH}/${containerId}?fields=status_code,status&access_token=${accessToken}`
       );
       if (statusRes.ok) {
         status = await statusRes.json();
@@ -157,7 +157,9 @@ export async function publishReel(
       // Transient network error during polling — continue to next iteration.
     }
     if (status.status_code === "FINISHED") { finished = true; break; }
-    if (status.status_code === "ERROR") throw new Error("Media container processing errored.");
+    if (status.status_code === "ERROR" || status.status_code === "EXPIRED") {
+      throw new Error(`Media container processing errored: ${JSON.stringify(status).slice(0, 200)}`);
+    }
   }
   // Never publish a container that didn't finish transcoding — Instagram would reject it
   // and (worse) the caller couldn't distinguish a real timeout from success.

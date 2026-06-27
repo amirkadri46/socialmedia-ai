@@ -17,11 +17,21 @@ export default function DownloaderPage() {
   const [scraping, setScraping] = useState(false);
 
   useEffect(() => {
-    const poll = () =>
-      fetch("/api/downloader/queue").then((r) => r.json()).then(setJobs).catch(() => {});
+    let timer: ReturnType<typeof setTimeout>;
+    const ACTIVE_STATUSES = new Set(["waiting", "inspecting", "downloading", "uploading", "retrying"]);
+    const poll = () => {
+      if (document.hidden) { timer = setTimeout(poll, 10_000); return; }
+      fetch("/api/downloader/queue")
+        .then((r) => r.json())
+        .then((data: DownloadJob[]) => {
+          setJobs(data);
+          const hasActive = data.some((j) => ACTIVE_STATUSES.has(j.status));
+          timer = setTimeout(poll, hasActive ? 2_000 : 10_000);
+        })
+        .catch(() => { timer = setTimeout(poll, 5_000); });
+    };
     poll();
-    const id = setInterval(poll, 2000);
-    return () => clearInterval(id);
+    return () => clearTimeout(timer);
   }, []);
 
   const addUrls = async (urls: string[]) => {

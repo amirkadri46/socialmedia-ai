@@ -5,7 +5,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   try {
     await campaignService.publish(id);
     return Response.json({ ok: true });
-  } catch (e: any) {
-    return Response.json({ error: e.message }, { status: 400 });
+  } catch (e: unknown) {
+    return Response.json({ error: e instanceof Error ? e.message : "Publish failed" }, { status: 400 });
   }
 }

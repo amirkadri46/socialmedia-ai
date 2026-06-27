@@ -238,7 +238,11 @@ export function upsertAccount(account: SocialAccount): void {
 
 /** Strip the access token before sending accounts to the client. */
 export function publicAccounts(): Omit<SocialAccount, "accessToken">[] {
-  return readAccounts().map(({ accessToken: _omit, ...rest }) => rest);
+  return readAccounts().map((account) => {
+    const rest = { ...account };
+    delete (rest as Partial<SocialAccount>).accessToken;
+    return rest;
+  });
 }
 
 // ── Scheduled posts (JSON) ────────────────────────────────────────────────────────

@@ -3,20 +3,6 @@ import { readSettings as fileReadSettings, writeSettings as fileWriteSettings } 
 import { DEFAULT_SHORTCUTS } from "@/lib/clip/shortcuts";
 import { serverClient } from "../client";
 
-// Non-secret fields stored in DB. Secrets always come from env vars.
-type NonSecretSettings = Omit<
-  AppSettings,
-  | "openaiApiKey"
-  | "openrouterApiKey"
-  | "apifyApiToken"
-  | "deepgramApiKey"
-  | "assemblyaiApiKey"
-  | "metaAppId"
-  | "metaAppSecret"
-  | "ytDlpCookiesText"
-  | "ytDlpCookiesBrowser"
->;
-
 export interface SettingsRepo {
   get(): Promise<AppSettings>;
   write(settings: AppSettings): Promise<void>;

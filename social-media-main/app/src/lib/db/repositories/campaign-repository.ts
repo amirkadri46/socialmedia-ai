@@ -46,8 +46,9 @@ export const campaignRepository = {
       .update({ ...data, updated_at: new Date().toISOString() })
       .eq("id", id)
       .select()
-      .single();
+      .maybeSingle();
     if (error) throw new Error(`campaignRepository.update: ${error.message}`);
+    if (!row) throw new Error(`campaignRepository.update: campaign ${id} not found`);
     return row;
   },
 

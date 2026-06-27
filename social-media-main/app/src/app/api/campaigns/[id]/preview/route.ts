@@ -5,7 +5,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   try {
     const preview = await campaignService.getPreview(id);
     return Response.json(preview);
-  } catch (e: any) {
-    return Response.json({ error: e.message }, { status: 404 });
+  } catch (e: unknown) {
+    return Response.json({ error: e instanceof Error ? e.message : "Preview failed" }, { status: 404 });
   }
 }

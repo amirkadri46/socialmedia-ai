@@ -3,11 +3,28 @@ import { repos } from "@/lib/db";
 import { resolveShortcuts } from "@/lib/clip/shortcuts";
 import type { AppSettings } from "@/lib/settings";
 
+const SECRET_FIELDS = [
+  "openaiApiKey",
+  "openrouterApiKey",
+  "apifyApiToken",
+  "deepgramApiKey",
+  "assemblyaiApiKey",
+  "ytDlpCookiesBrowser",
+  "ytDlpCookiesText",
+  "metaAppId",
+  "metaAppSecret",
+] as const satisfies readonly (keyof AppSettings)[];
+
 export async function GET() {
   const settings = await repos.settings.get();
   // Never return plaintext secrets — return boolean presence flags instead.
   // The client only needs to know whether a key is configured, not its value.
-  return NextResponse.json(settings);
+  const redacted: Record<string, unknown> = { ...settings, secretPresence: {} };
+  for (const field of SECRET_FIELDS) {
+    (redacted.secretPresence as Record<string, boolean>)[field] = Boolean(settings[field]);
+    redacted[field] = "";
+  }
+  return NextResponse.json(redacted);
 }
 
 export async function POST(req: Request) {

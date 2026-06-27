@@ -12,6 +12,15 @@ import {
 } from "@/components/ui/select";
 import { DEFAULT_DOWNLOADER_SETTINGS, type DownloaderSettings } from "@/lib/downloader/types";
 
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <Label className="text-muted-foreground">{label}</Label>
+      {children}
+    </div>
+  );
+}
+
 export default function DownloaderSettingsPage() {
   const [s, setS] = useState<DownloaderSettings>(DEFAULT_DOWNLOADER_SETTINGS);
   const [saving, setSaving] = useState(false);
@@ -33,13 +42,6 @@ export default function DownloaderSettingsPage() {
     setSaving(false);
     toast.success("Settings saved");
   };
-
-  const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div className="space-y-2">
-      <Label className="text-muted-foreground">{label}</Label>
-      {children}
-    </div>
-  );
 
   return (
     <div className="flex max-w-2xl flex-col gap-6">

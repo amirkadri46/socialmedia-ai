@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { v4 as uuid } from "uuid";
 import { repos } from "@/lib/db";
 import { publishReel } from "@/lib/clip/social/instagram";
+import { buildSignedClipMediaUrl } from "@/lib/clip/social/media-url";
 import type { ScheduledPost } from "@/lib/types";
 
 export const maxDuration = 300;
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
           try {
             // Always rebuild from the current base — a persisted clip.publicUrl can
             // point at a rotated/dead ngrok URL from an earlier publish.
-            const publicUrl = `${appBase}/api/clip/media/${clip.id}`;
+            const publicUrl = buildSignedClipMediaUrl(appBase, clip.id);
             const { mediaId } = await publishReel(
               account.igUserId!,
               account.accessToken,

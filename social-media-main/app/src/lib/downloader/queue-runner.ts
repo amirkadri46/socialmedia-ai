@@ -16,7 +16,9 @@ class QueueRunner {
   ensureStarted() {
     if (this.tickTimer !== null) return;
     // Load any persisted jobs; reset transient (in-flight) statuses to "waiting".
-    for (const j of readQueue()) {
+    const persisted = readQueue();
+    this.diskCache = persisted; // seed cache so getAllJobs() skips a second disk read
+    for (const j of persisted) {
       const transient =
         j.status === "waiting" ||
         j.status === "retrying" ||
@@ -161,8 +163,10 @@ class QueueRunner {
 
   getAllJobs(): DownloadJob[] {
     // Merge persisted (completed/failed) with live (in-progress); live wins.
+    // diskCache avoids re-reading the JSON file on every 2 s poll.
+    if (this.diskCache === null) this.diskCache = readQueue();
     const merged = new Map<string, DownloadJob>();
-    for (const j of readQueue()) merged.set(j.id, j);
+    for (const j of this.diskCache) merged.set(j.id, j);
     for (const [id, j] of this.liveJobs) merged.set(id, j);
     return Array.from(merged.values()).sort(
       (a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime()
@@ -179,6 +183,7 @@ class QueueRunner {
     // ponytail: can't kill the yt-dlp child cleanly; cancel = mark failed.
     this.patch(id, { status: "failed", error: "Cancelled by user" });
     upsertJob(this.getJob(id)!);
+    this.diskCache = null;
   }
 
   clearFinished() {
@@ -187,12 +192,12 @@ class QueueRunner {
     );
     this.liveJobs = new Map(active.map((j) => [j.id, j]));
     writeQueue(active);
+    this.diskCache = null;
   }
 }
 
 // Survive Next.js dev hot-reloads: one instance per process.
 declare global {
-  // eslint-disable-next-line no-var
   var __dlRunner: QueueRunner | undefined;
 }
 export const queueRunner: QueueRunner =

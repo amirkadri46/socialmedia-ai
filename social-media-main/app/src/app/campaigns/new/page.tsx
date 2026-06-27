@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
 import { VideoSelector } from "@/components/campaigns/video-selector";
 import { AccountSelector } from "@/components/campaigns/account-selector";
@@ -42,52 +43,6 @@ export default function NewCampaignPage() {
     selectedAccountIds.length > 0,
     true,
   ][step];
-
-  const createAndAssociate = async (publish: boolean) => {
-    setSaving(true);
-    try {
-      // 1. Create campaign
-      const res = await fetch("/api/campaigns", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          captionPromptTemplate: captionTemplate.trim() || undefined,
-          scheduleRule: rule,
-          timezone: rule.timezone,
-        }),
-      });
-      const campaign = await res.json();
-      const id: string = campaign.id;
-
-      // 2. Add videos sequentially (position by index)
-      for (let i = 0; i < selectedVideoIds.length; i++) {
-        await fetch(`/api/campaigns/${id}/videos`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ videoId: selectedVideoIds[i], position: i }),
-        });
-      }
-
-      // 3. Add accounts
-      for (const accountId of selectedAccountIds) {
-        await fetch(`/api/campaigns/${id}/accounts`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ accountId }),
-        });
-      }
-
-      // 4. Publish if requested
-      if (publish) {
-        await fetch(`/api/campaigns/${id}/publish`, { method: "POST" });
-      }
-
-      router.push("/campaigns");
-    } finally {
-      setSaving(false);
-    }
-  };
 
   // For preview card we need a campaign id — create a temp one on step 3→4 transition
   const handleNextFromAccounts = async () => {
@@ -178,8 +133,8 @@ export default function NewCampaignPage() {
           </div>
           <div className="space-y-1.5">
             <Label>Caption prompt template <span className="text-muted-foreground">(optional)</span></Label>
-            <textarea
-              className="w-full min-h-[100px] rounded-md border border-input bg-transparent px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+            <Textarea
+              className="min-h-[100px] resize-none"
               placeholder="Write an engaging Instagram caption for a video titled '{title}' by {creator}..."
               value={captionTemplate}
               onChange={(e) => setCaptionTemplate(e.target.value)}

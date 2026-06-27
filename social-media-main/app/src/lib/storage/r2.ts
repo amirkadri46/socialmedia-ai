@@ -42,8 +42,8 @@ export function createR2Provider(): StorageProvider {
     async delete(key) {
       try {
         await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
-      } catch (err: any) {
-        if (err?.Code !== "NoSuchKey") throw err;
+      } catch (err: unknown) {
+        if (!(err instanceof Error && "Code" in err && err.Code === "NoSuchKey")) throw err;
       }
     },
 

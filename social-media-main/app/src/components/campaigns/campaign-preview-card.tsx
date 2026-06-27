@@ -35,11 +35,10 @@ export function CampaignPreviewCard({ campaignId, videoCount, accountCount, sche
 
   useEffect(() => {
     if (!campaignId || (videoCount === 0 && accountCount === 0)) {
-      setPreview(null);
       return;
     }
-    setLoading(true);
     const timer = setTimeout(() => {
+      setLoading(true);
       fetch(`/api/campaigns/${campaignId}/preview`)
         .then((r) => r.json())
         .then(setPreview)

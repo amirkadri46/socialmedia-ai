@@ -1,17 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Loader2, Film, Users, Calendar, BarChart2, ListChecks } from "lucide-react";
 import { ScheduleRuleEditor } from "@/components/campaigns/schedule-rule-editor";
 import { CampaignPreviewCard } from "@/components/campaigns/campaign-preview-card";
 import { AccountSelector } from "@/components/campaigns/account-selector";
 import type { Campaign, CampaignVideo, InstagramAccount, ScheduleRule } from "@/lib/db/types";
 import type { Video } from "@/lib/db/types";
+import type { UploadJobWithMeta } from "@/lib/db/repositories/upload-job-repository";
 
 const JOB_STATUS_STYLE: Record<string, string> = {
   queued: "bg-zinc-700 text-zinc-300",
@@ -46,12 +55,12 @@ export default function CampaignDetailPage() {
   const [videos, setVideos] = useState<CampaignVideoEnriched[]>([]);
   const [accounts, setAccounts] = useState<InstagramAccount[]>([]);
   const [addingIds, setAddingIds] = useState<string[]>([]);
-  const [jobs, setJobs] = useState<any[]>([]);
+  const [jobs, setJobs] = useState<UploadJobWithMeta[]>([]);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
     const [c, v, a, j] = await Promise.all([
       fetch(`/api/campaigns/${id}`).then((r) => r.json()),
       fetch(`/api/campaigns/${id}/videos`).then((r) => r.json()),
@@ -63,22 +72,24 @@ export default function CampaignDetailPage() {
     setVideos(v);
     setAccounts(a);
     setJobs(j.jobs ?? []);
-  };
+  }, [id]);
 
-  useEffect(() => { fetchAll(); }, [id]);
+  useEffect(() => { void fetchAll(); }, [fetchAll]);
 
   // AccountSelector uses social-account IDs; the POST route bridges them to pub_instagram_accounts.
   const handleAddAccounts = async (newIds: string[]) => {
     const toAdd = newIds.filter((x) => !addingIds.includes(x));
     setAddingIds(newIds);
-    for (const accountId of toAdd) {
-      await fetch(`/api/campaigns/${id}/accounts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId }),
-      });
+    if (toAdd.length > 0) {
+      await Promise.all(toAdd.map((accountId) =>
+        fetch(`/api/campaigns/${id}/accounts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accountId }),
+        })
+      ));
+      await fetchAll();
     }
-    if (toAdd.length > 0) await fetchAll();
   };
 
   const removeAccount = async (pubAccountId: string) => {
@@ -305,41 +316,41 @@ export default function CampaignDetailPage() {
           {jobs.length === 0 ? (
             <p className="text-sm text-muted-foreground">No jobs for this campaign yet.</p>
           ) : (
-            <div className="rounded-lg border border-border overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-muted-foreground text-xs uppercase tracking-wide">
-                    <th className="text-left px-4 py-2.5">Video</th>
-                    <th className="text-left px-4 py-2.5">Account</th>
-                    <th className="text-left px-4 py-2.5">Scheduled</th>
-                    <th className="text-left px-4 py-2.5">Status</th>
-                    <th className="text-left px-4 py-2.5">Retries</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
+            <div className="rounded-lg border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="text-xs uppercase tracking-wide">
+                    <TableHead className="px-4 py-2.5">Video</TableHead>
+                    <TableHead className="px-4 py-2.5">Account</TableHead>
+                    <TableHead className="px-4 py-2.5">Scheduled</TableHead>
+                    <TableHead className="px-4 py-2.5">Status</TableHead>
+                    <TableHead className="px-4 py-2.5">Retries</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {jobs.map((job) => (
-                    <tr key={job.id} className="hover:bg-muted/30">
-                      <td className="px-4 py-2.5 max-w-[180px] truncate" title={job.video_title}>
+                    <TableRow key={job.id}>
+                      <TableCell className="px-4 py-2.5 max-w-[180px] truncate" title={job.video_title}>
                         {job.video_title || job.video_id}
-                      </td>
-                      <td className="px-4 py-2.5 text-muted-foreground">@{job.account_username}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="px-4 py-2.5 text-muted-foreground">@{job.account_username}</TableCell>
+                      <TableCell className="px-4 py-2.5 whitespace-nowrap text-muted-foreground">
                         {new Date(job.scheduled_at).toLocaleString(undefined, {
                           month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
                         })}
-                      </td>
-                      <td className="px-4 py-2.5">
+                      </TableCell>
+                      <TableCell className="px-4 py-2.5">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${JOB_STATUS_STYLE[job.status] ?? "bg-zinc-700 text-zinc-300"}`}>
                           {job.status}
                         </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="px-4 py-2.5 text-muted-foreground">
                         {job.retry_count > 0 ? job.retry_count : "—"}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
 

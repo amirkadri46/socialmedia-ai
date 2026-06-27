@@ -7,6 +7,12 @@ export interface UploadJobWithMeta extends UploadJob {
   account_username: string;
 }
 
+type UploadJobJoinedRow = UploadJob & {
+  pub_campaigns?: { name?: string | null } | null;
+  pub_videos?: { title?: string | null } | null;
+  pub_instagram_accounts?: { username?: string | null } | null;
+};
+
 export const uploadJobRepository = {
   async findDue(limit: number): Promise<UploadJob[]> {
     const { data, error } = await supabaseServer
@@ -125,7 +131,7 @@ export const uploadJobRepository = {
     if (error) throw new Error(`uploadJobRepository.findWithFilters: ${error.message}`);
 
     return {
-      rows: (data ?? []).map((row: any) => ({
+      rows: ((data ?? []) as UploadJobJoinedRow[]).map((row) => ({
         ...row,
         campaign_name: row.pub_campaigns?.name ?? "",
         video_title: row.pub_videos?.title ?? "",

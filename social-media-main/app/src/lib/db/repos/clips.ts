@@ -1,7 +1,6 @@
 import type { Clip } from "@/lib/types";
 import {
   readClips,
-  writeClips,
   appendClips,
   clipsForJob as fileClipsForJob,
   getClip as fileGetClip,

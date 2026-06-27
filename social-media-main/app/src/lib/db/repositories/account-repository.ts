@@ -3,7 +3,7 @@ import type { AccountStatus, InstagramAccount } from "@/lib/db/types";
 
 export const accountRepository = {
   async findAll(status?: AccountStatus): Promise<InstagramAccount[]> {
-    let q = supabaseServer.from("instagram_accounts").select("*");
+    let q = supabaseServer.from("pub_instagram_accounts").select("*");
     if (status) q = q.eq("status", status);
     const { data, error } = await q;
     if (error) throw new Error(`accountRepository.findAll: ${error.message}`);
@@ -17,6 +17,16 @@ export const accountRepository = {
       .eq("id", id)
       .single();
     return data ?? null;
+  },
+
+  async findByIds(ids: string[]): Promise<InstagramAccount[]> {
+    if (ids.length === 0) return [];
+    const { data, error } = await supabaseServer
+      .from("pub_instagram_accounts")
+      .select("*")
+      .in("id", ids);
+    if (error) throw new Error(`accountRepository.findByIds: ${error.message}`);
+    return data ?? [];
   },
 
   async findByIgUserId(igUserId: string): Promise<InstagramAccount | null> {

@@ -292,8 +292,8 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
           }
         }
       }
-    } catch (e: any) {
-      if (e.name === "AbortError") return;
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setExporting({ pct: 0, log: e instanceof Error ? e.message : "Export failed" });
     }
   }
@@ -442,7 +442,6 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
               playhead={playhead}
               videoRef={videoRef}
               onUpdate={ed.update}
-              onOpenCrop={() => setCropOpen(true)}
               selectedTextId={selectedTextId}
               onSelectText={(id) => setSelectedItem(id ? { kind: "text", id } : null)}
               sourceVideoUrl={ed.sourceVideoUrl}

@@ -1,11 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Film } from "lucide-react";
+import type { PublishHistoryWithMeta } from "@/lib/db/repositories/publish-history-repository";
 
 const PAGE_SIZE = 50;
+type HistoryEntry = PublishHistoryWithMeta & { thumbnail_url?: string | null };
 
 function formatPublished(iso: string) {
   return new Date(iso).toLocaleString(undefined, {
@@ -35,7 +53,7 @@ function todayStart() {
 }
 
 export default function HistoryPage() {
-  const [entries, setEntries] = useState<any[]>([]);
+  const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<{ id: string; username: string }[]>([]);
@@ -45,7 +63,7 @@ export default function HistoryPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
-  const fetchEntries = async () => {
+  const fetchEntries = useCallback(async () => {
     setLoading(true);
     const p = new URLSearchParams();
     if (accountId) p.set("account_id", accountId);
@@ -58,16 +76,15 @@ export default function HistoryPage() {
     setEntries(data.entries ?? []);
     setTotal(data.total ?? 0);
     setLoading(false);
-  };
+  }, [accountId, from, to, page]);
 
   useEffect(() => {
     fetch("/api/accounts").then((r) => r.json()).then(setAccounts);
   }, []);
 
-  useEffect(() => { fetchEntries(); }, [accountId, from, to, page]);
+  useEffect(() => { queueMicrotask(() => void fetchEntries()); }, [fetchEntries]);
 
   // Derive period counts from all-time totals and current filtered entries
-  const now = new Date().toISOString();
   const thisMonth = entries.filter((e) => e.published_at >= thisMonthStart()).length;
   const thisWeek = entries.filter((e) => e.published_at >= thisWeekStart()).length;
   const today = entries.filter((e) => e.published_at >= todayStart()).length;
@@ -89,25 +106,29 @@ export default function HistoryPage() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap gap-3 items-center">
-        <select
-          className="text-sm bg-background border border-border rounded px-2 py-1.5"
-          value={accountId}
-          onChange={(e) => { setAccountId(e.target.value); setPage(0); }}
+        <Select
+          value={accountId || "_all"}
+          onValueChange={(value) => { setAccountId(value === "_all" ? "" : value); setPage(0); }}
         >
-          <option value="">All accounts</option>
+          <SelectTrigger className="w-44">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+          <SelectItem value="_all">All accounts</SelectItem>
           {accounts.map((a) => (
-            <option key={a.id} value={a.id}>@{a.username}</option>
+            <SelectItem key={a.id} value={a.id}>@{a.username}</SelectItem>
           ))}
-        </select>
-        <input
+          </SelectContent>
+        </Select>
+        <Input
           type="date"
-          className="text-sm bg-background border border-border rounded px-2 py-1.5"
+          className="w-auto"
           value={from}
           onChange={(e) => { setFrom(e.target.value); setPage(0); }}
         />
-        <input
+        <Input
           type="date"
-          className="text-sm bg-background border border-border rounded px-2 py-1.5"
+          className="w-auto"
           value={to}
           onChange={(e) => { setTo(e.target.value); setPage(0); }}
         />
@@ -142,21 +163,21 @@ export default function HistoryPage() {
         <p className="text-center text-muted-foreground py-16">No publish history yet.</p>
       ) : (
         <>
-          <div className="rounded-lg border border-border overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-muted-foreground text-xs uppercase tracking-wide">
-                  <th className="text-left px-4 py-2.5">Thumbnail</th>
-                  <th className="text-left px-4 py-2.5">Video</th>
-                  <th className="text-left px-4 py-2.5">Account</th>
-                  <th className="text-left px-4 py-2.5">Published</th>
-                  <th className="text-left px-4 py-2.5">Instagram ID</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
+          <div className="rounded-lg border border-border">
+            <Table>
+              <TableHeader>
+                <TableRow className="text-xs uppercase tracking-wide">
+                  <TableHead className="px-4 py-2.5">Thumbnail</TableHead>
+                  <TableHead className="px-4 py-2.5">Video</TableHead>
+                  <TableHead className="px-4 py-2.5">Account</TableHead>
+                  <TableHead className="px-4 py-2.5">Published</TableHead>
+                  <TableHead className="px-4 py-2.5">Instagram ID</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {entries.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-muted/30">
-                    <td className="px-4 py-2.5">
+                  <TableRow key={entry.id}>
+                    <TableCell className="px-4 py-2.5">
                       {entry.thumbnail_url ? (
                         <Image
                           src={entry.thumbnail_url}
@@ -171,27 +192,27 @@ export default function HistoryPage() {
                           <Film className="h-4 w-4 text-zinc-500" />
                         </div>
                       )}
-                    </td>
-                    <td className="px-4 py-2.5">
+                    </TableCell>
+                    <TableCell className="px-4 py-2.5">
                       <p className="font-medium truncate max-w-[200px]" title={entry.video_title}>
                         {entry.video_title || "—"}
                       </p>
-                    </td>
-                    <td className="px-4 py-2.5 text-muted-foreground">@{entry.account_username}</td>
-                    <td className="px-4 py-2.5 whitespace-nowrap text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="px-4 py-2.5 text-muted-foreground">@{entry.account_username}</TableCell>
+                    <TableCell className="px-4 py-2.5 whitespace-nowrap text-muted-foreground">
                       {formatPublished(entry.published_at)}
-                    </td>
-                    <td className="px-4 py-2.5">
+                    </TableCell>
+                    <TableCell className="px-4 py-2.5">
                       {entry.instagram_media_id ? (
                         <code className="text-xs text-muted-foreground font-mono" title={entry.instagram_media_id}>
                           media_{entry.instagram_media_id.slice(0, 12)}…
                         </code>
                       ) : "—"}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
 
           {/* Pagination */}

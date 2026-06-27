@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Megaphone, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type { Campaign } from "@/lib/db/types";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -21,15 +29,15 @@ export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchCampaigns = () => {
+  const fetchCampaigns = useCallback(() => {
     setLoading(true);
     fetch("/api/campaigns")
       .then((r) => r.json())
       .then(setCampaigns)
       .finally(() => setLoading(false));
-  };
+  }, []);
 
-  useEffect(fetchCampaigns, []);
+  useEffect(() => { queueMicrotask(() => void fetchCampaigns()); }, [fetchCampaigns]);
 
   const pause = async (id: string) => {
     await fetch(`/api/campaigns/${id}/pause`, { method: "POST" });
@@ -59,32 +67,32 @@ export default function CampaignsPage() {
           <Button onClick={() => router.push("/campaigns/new")}>Create Campaign</Button>
         </div>
       ) : (
-        <div className="rounded-lg border border-border overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-white/[0.02] text-muted-foreground">
-                <th className="text-left px-4 py-3 font-medium">Name</th>
-                <th className="text-left px-4 py-3 font-medium">Status</th>
-                <th className="text-left px-4 py-3 font-medium">Created</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody>
+        <div className="rounded-lg border border-border">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/20">
+                <TableHead className="px-4 py-3">Name</TableHead>
+                <TableHead className="px-4 py-3">Status</TableHead>
+                <TableHead className="px-4 py-3">Created</TableHead>
+                <TableHead className="px-4 py-3" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {campaigns.map((c) => (
-                <tr key={c.id} className="border-b border-border last:border-0 hover:bg-white/[0.02]">
-                  <td className="px-4 py-3 font-medium">{c.name}</td>
-                  <td className="px-4 py-3">
+                <TableRow key={c.id}>
+                  <TableCell className="px-4 py-3 font-medium">{c.name}</TableCell>
+                  <TableCell className="px-4 py-3">
                     <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[c.status] ?? "bg-zinc-700 text-zinc-300"}`}>
                       {c.status === "running" && (
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
                       )}
                       {c.status}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground">
                     {new Date(c.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="px-4 py-3">
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
                       {c.status === "running" && (
                         <Button size="sm" variant="outline" onClick={() => pause(c.id)}>Pause</Button>
@@ -96,11 +104,11 @@ export default function CampaignsPage() {
                         Manage
                       </Button>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>

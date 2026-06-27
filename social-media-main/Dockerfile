@@ -1,5 +1,5 @@
 # Production image for the Social Media AI app: Next.js + ffmpeg + yt-dlp.
-FROM node:20-slim
+FROM node:22-slim
 
 # System deps for the clipping pipeline:
 #   ffmpeg            — yt-dlp post-processing / muxing (rendering uses bundled ffmpeg-static)
@@ -30,10 +30,10 @@ COPY . .
 # can pass them through during the Docker build as well.
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-ARG SUPABASE_SERVICE_ROLE_KEY
+ARG NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
-ENV SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY
+ENV NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 
 # Build the Next.js app.
 RUN cd app && npm run build

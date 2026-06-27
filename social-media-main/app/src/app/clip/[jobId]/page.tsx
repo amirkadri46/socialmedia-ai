@@ -190,7 +190,6 @@ function ClipCard({ clip, onSchedule }: { clip: Clip; onSchedule: () => void }) 
     <Card className="group gap-0 overflow-hidden p-0">
       <div className="relative aspect-[9/16] bg-black">
         {playing ? (
-          // eslint-disable-next-line jsx-a11y/media-has-caption
           <video
             src={`/api/clip/media/${clip.id}`}
             controls

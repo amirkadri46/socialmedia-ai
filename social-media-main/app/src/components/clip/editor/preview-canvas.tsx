@@ -30,7 +30,6 @@ export function PreviewCanvas({
   playhead,
   videoRef,
   onUpdate,
-  onOpenCrop,
   selectedTextId,
   onSelectText,
   sourceVideoUrl,
@@ -41,7 +40,6 @@ export function PreviewCanvas({
   playhead: number; // edited-timeline seconds
   videoRef: RefObject<HTMLVideoElement | null>;
   onUpdate: (mutator: (draft: ClipEdit) => ClipEdit | void) => void;
-  onOpenCrop?: () => void;
   selectedTextId?: string | null;
   onSelectText?: (id: string | null) => void;
   sourceVideoUrl?: string | null;
@@ -295,7 +293,6 @@ export function PreviewCanvas({
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blurBg?.enabled, isMulti, videoRef]);
 
   function commitPane(i: number, crop: CropRect) {
@@ -579,8 +576,9 @@ export function PreviewCanvas({
                 opacity: m.opacity ?? 1,
               }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               {m.kind === "image" ? (
+                // Editor overlays may be blob/data/user asset URLs, so next/image is not a safe swap here.
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={m.src} alt="" className="pointer-events-none h-full w-full object-contain" />
               ) : (
                 <video src={m.src} className="pointer-events-none h-full w-full object-contain" muted loop autoPlay />
