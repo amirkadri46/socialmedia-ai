@@ -3,7 +3,7 @@ import path from "path";
 import { mkdirSync, readdirSync, existsSync } from "fs";
 import { run, ytDlpPath, ffmpegPath, ytDlpAvailable } from "@/lib/clip/ffmpeg";
 import { cookieArgs } from "@/lib/clip/download";
-import { readSettings } from "@/lib/settings";
+import { repos } from "@/lib/db";
 import type { DownloadPlatform, DownloadQuality } from "./types";
 
 export function detectPlatform(url: string): DownloadPlatform {
@@ -13,8 +13,8 @@ export function detectPlatform(url: string): DownloadPlatform {
 }
 
 /** Cookie args from Clip Settings — reuses the clip pipeline's logic (incl. env fallback). */
-export function buildCookieArgs(): string[] {
-  const s = readSettings();
+export async function buildCookieArgs(): Promise<string[]> {
+  const s = await repos.settings.get();
   return cookieArgs(s.ytDlpCookiesBrowser, s.ytDlpCookiesText);
 }
 
@@ -40,7 +40,7 @@ export async function inspectUrl(
     "--dump-single-json",
     "--no-warnings",
     "--no-playlist",
-    ...buildCookieArgs(),
+    ...await buildCookieArgs(),
     url,
   ]);
   const json = JSON.parse(stdout);
@@ -73,7 +73,7 @@ export async function downloadSingleJob(
       "--ffmpeg-location", path.dirname(ffmpegPath()),
       "--no-playlist",
       "--no-warnings",
-      ...buildCookieArgs(),
+      ...await buildCookieArgs(),
       "-o", outTemplate,
       job.url,
     ],

@@ -24,7 +24,7 @@ export async function scrapeProfileUrls(profileUrl: string, limit?: number): Pro
     "--flat-playlist",
     "--dump-single-json",
     "--no-warnings",
-    ...buildCookieArgs(),
+    ...await buildCookieArgs(),
     target,
   ]);
 
