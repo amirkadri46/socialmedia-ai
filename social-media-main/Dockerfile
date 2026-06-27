@@ -24,6 +24,17 @@ RUN cd app && npm ci
 # Copy the rest of the project (app source + seed data/).
 COPY . .
 
+# Supabase vars must be available at build time (Next.js bakes NEXT_PUBLIC_* into
+# the client bundle and supabase.ts throws at module eval if they're missing).
+# Railway injects service variables at runtime; declare them as ARGs so Railway
+# can pass them through during the Docker build as well.
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ARG SUPABASE_SERVICE_ROLE_KEY
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY
+
 # Build the Next.js app.
 RUN cd app && npm run build
 
