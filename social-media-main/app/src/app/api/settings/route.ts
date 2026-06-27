@@ -7,19 +7,7 @@ export async function GET() {
   const settings = await repos.settings.get();
   // Never return plaintext secrets — return boolean presence flags instead.
   // The client only needs to know whether a key is configured, not its value.
-  const { openaiApiKey, openrouterApiKey, apifyApiToken, deepgramApiKey,
-          assemblyaiApiKey, metaAppId, metaAppSecret, ytDlpCookiesText,
-          ytDlpCookiesBrowser, ...safePrefs } = settings;
-  return NextResponse.json({
-    ...safePrefs,
-    hasOpenaiKey: !!openaiApiKey,
-    hasOpenrouterKey: !!openrouterApiKey,
-    hasApifyToken: !!apifyApiToken,
-    hasDeepgramKey: !!deepgramApiKey,
-    hasAssemblyaiKey: !!assemblyaiApiKey,
-    hasMetaApp: !!(metaAppId && metaAppSecret),
-    hasYtDlpCookies: !!(ytDlpCookiesText || ytDlpCookiesBrowser),
-  });
+  return NextResponse.json(settings);
 }
 
 export async function POST(req: Request) {

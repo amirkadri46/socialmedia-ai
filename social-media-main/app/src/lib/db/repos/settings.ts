@@ -48,14 +48,14 @@ function overlayEnvSecrets(base: Partial<AppSettings>): AppSettings {
     defaultClipLength: base.defaultClipLength ?? "Auto (0-3m)",
     enableSocialPublish: base.enableSocialPublish ?? false,
     editorShortcuts: base.editorShortcuts ?? { ...DEFAULT_SHORTCUTS },
-    // Secrets from env (never from DB)
-    openaiApiKey: process.env.OPENAI_API_KEY ?? "",
-    openrouterApiKey: process.env.OPENROUTER_API_KEY ?? "",
-    apifyApiToken: process.env.APIFY_API_TOKEN ?? "",
-    deepgramApiKey: process.env.DEEPGRAM_API_KEY ?? "",
-    assemblyaiApiKey: process.env.ASSEMBLYAI_API_KEY ?? "",
-    metaAppId: process.env.META_APP_ID ?? "",
-    metaAppSecret: process.env.META_APP_SECRET ?? "",
+    // Env vars take priority; DB values are the fallback (set via Settings UI)
+    openaiApiKey: process.env.OPENAI_API_KEY ?? base.openaiApiKey ?? "",
+    openrouterApiKey: process.env.OPENROUTER_API_KEY ?? base.openrouterApiKey ?? "",
+    apifyApiToken: process.env.APIFY_API_TOKEN ?? base.apifyApiToken ?? "",
+    deepgramApiKey: process.env.DEEPGRAM_API_KEY ?? base.deepgramApiKey ?? "",
+    assemblyaiApiKey: process.env.ASSEMBLYAI_API_KEY ?? base.assemblyaiApiKey ?? "",
+    metaAppId: process.env.META_APP_ID ?? base.metaAppId ?? "",
+    metaAppSecret: process.env.META_APP_SECRET ?? base.metaAppSecret ?? "",
     ytDlpCookiesBrowser: process.env.YTDLP_COOKIES_BROWSER ?? base.ytDlpCookiesBrowser ?? "",
     ytDlpCookiesText: process.env.YTDLP_COOKIES_TEXT ?? base.ytDlpCookiesText ?? "",
   };
@@ -85,9 +85,16 @@ export const supabaseSettings: SettingsRepo = {
       defaultClipLength: r.default_clip_length as string,
       enableSocialPublish: r.enable_social_publish as boolean,
       editorShortcuts: (r.editor_shortcuts as AppSettings["editorShortcuts"]) ?? { ...DEFAULT_SHORTCUTS },
-      // yt-dlp cookies may be set via the UI — persisted in DB so they survive deploys.
       ytDlpCookiesText: r.ytdlp_cookies_text as string | undefined,
       ytDlpCookiesBrowser: r.ytdlp_cookies_browser as string | undefined,
+      // Secrets stored in DB (env vars take priority via overlayEnvSecrets)
+      openaiApiKey: r.openai_api_key as string | undefined,
+      openrouterApiKey: r.openrouter_api_key as string | undefined,
+      apifyApiToken: r.apify_api_token as string | undefined,
+      deepgramApiKey: r.deepgram_api_key as string | undefined,
+      assemblyaiApiKey: r.assemblyai_api_key as string | undefined,
+      metaAppId: r.meta_app_id as string | undefined,
+      metaAppSecret: r.meta_app_secret as string | undefined,
     });
   },
 
@@ -110,6 +117,13 @@ export const supabaseSettings: SettingsRepo = {
       editor_shortcuts: settings.editorShortcuts,
       ytdlp_cookies_text: settings.ytDlpCookiesText || null,
       ytdlp_cookies_browser: settings.ytDlpCookiesBrowser || null,
+      openai_api_key: settings.openaiApiKey || null,
+      openrouter_api_key: settings.openrouterApiKey || null,
+      apify_api_token: settings.apifyApiToken || null,
+      deepgram_api_key: settings.deepgramApiKey || null,
+      assemblyai_api_key: settings.assemblyaiApiKey || null,
+      meta_app_id: settings.metaAppId || null,
+      meta_app_secret: settings.metaAppSecret || null,
       updated_at: new Date().toISOString(),
     });
     if (error) throw error;
