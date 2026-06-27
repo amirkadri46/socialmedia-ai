@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readEdit } from "@/lib/clip/store";
+import { repos } from "@/lib/db";
 import { autoFrameSegments } from "@/lib/clip/autoframe";
 import { editedDuration, windowToEdited } from "@/lib/clip/edit-timeline";
 import type { LayoutSegment } from "@/lib/types";
@@ -12,7 +12,7 @@ export async function POST(
   { params }: { params: Promise<{ jobId: string; clipId: string }> }
 ) {
   const { jobId, clipId } = await params;
-  const edit = readEdit(clipId);
+  const edit = await repos.clipEdits.get(clipId);
   if (!edit) {
     return NextResponse.json({ error: "Edit not found." }, { status: 404 });
   }

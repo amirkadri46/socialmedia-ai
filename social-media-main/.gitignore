@@ -15,3 +15,6 @@ data/clip-edits/
 data/clip-transcripts/
 data/outreach-lists.json
 data/outreach-templates.json
+data/download-queue.json
+data/downloader-settings.json
+assets/

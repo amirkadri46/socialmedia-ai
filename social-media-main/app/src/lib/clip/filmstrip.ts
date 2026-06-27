@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from "fs";
 import path from "path";
 import os from "os";
 import { ffmpeg, probe } from "./ffmpeg";
+import { persistentSourcePath, clipsForJob } from "./store";
 
 // Video thumbnail filmstrip for the timeline (3B).
 // One ffmpeg pass extracts ~1 frame/sec and tiles them into a single horizontal
@@ -23,7 +24,16 @@ function jobDir(jobId: string): string {
 }
 
 function sourcePath(jobId: string): string {
-  return path.join(jobDir(jobId), "source.mp4");
+  const persistent = persistentSourcePath(jobId);
+  if (existsSync(persistent)) return persistent;
+  const temp = path.join(jobDir(jobId), "source.mp4");
+  if (existsSync(temp)) return temp;
+  // Fall back to the first rendered clip mp4 when the source is gone.
+  const clips = clipsForJob(jobId);
+  for (const c of clips) {
+    if (c.filePath && existsSync(c.filePath)) return c.filePath;
+  }
+  return temp; // will trigger the "not found" error in ensureFilmstrip
 }
 
 function spritePath(jobId: string, fps: number, thumbH: number): string {

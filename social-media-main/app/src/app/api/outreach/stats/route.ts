@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
-import { readProspectLists } from "@/lib/outreach";
+import { repos } from "@/lib/db";
 import { LEAD_STATUS_ORDER, PRIORITY_LEVELS } from "@/lib/lead-scoring";
 import type { Prospect, LeadStatus, PriorityLevel } from "@/lib/types";
 
 // GET /api/outreach/stats — aggregate metrics across all lists for the dashboard.
 export async function GET() {
-  const lists = readProspectLists();
-  const all: Prospect[] = lists.flatMap((l) => l.prospects);
+  // Load all lists WITH prospects (getList per list would be slow; use getLists + getList)
+  const listMetas = await repos.prospects.getLists();
+  const all: Prospect[] = [];
+  await Promise.all(
+    listMetas.map(async (meta) => {
+      const list = await repos.prospects.getList(meta.id);
+      if (list) all.push(...list.prospects);
+    })
+  );
 
   const total = all.length;
   const has = (s: LeadStatus) => all.filter((p) => p.leadStatus === s).length;
@@ -41,6 +48,6 @@ export async function GET() {
     revenueGenerated: hasRevenue ? revenue : null,
     priorityDistribution: priorityCounts,
     pipeline: pipelineCounts,
-    listCount: lists.length,
+    listCount: listMetas.length,
   });
 }

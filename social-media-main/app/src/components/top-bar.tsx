@@ -5,6 +5,7 @@ import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Sun, Moon } from "lucide-react";
+import { Show, UserButton } from "@clerk/nextjs";
 
 const pageTitles: Record<string, string> = {
   "/videos": "Videos",
@@ -30,7 +31,7 @@ export function TopBar() {
       <SidebarTrigger className="text-muted-foreground hover:text-foreground transition-colors" />
       <div className="h-4 w-px bg-black/10 dark:bg-white/10" />
       <span className="text-sm font-medium">{title}</span>
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-2">
         {mounted && (
           <button
             type="button"
@@ -41,6 +42,9 @@ export function TopBar() {
             {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
         )}
+        <Show when="signed-in">
+          <UserButton />
+        </Show>
       </div>
     </div>
   );

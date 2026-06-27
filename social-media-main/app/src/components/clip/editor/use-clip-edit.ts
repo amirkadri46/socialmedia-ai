@@ -8,6 +8,8 @@ interface LoadState {
   edit: ClipEdit | null;
   words: Word[];
   clip: Clip | null;
+  sourceAvailable: boolean;
+  sourceVideoUrl: string | null;
   loading: boolean;
   error: string;
 }
@@ -21,11 +23,15 @@ export function useClipEdit(jobId: string, clipId: string) {
     edit: null,
     words: [],
     clip: null,
+    sourceAvailable: true,
+    sourceVideoUrl: null,
     loading: true,
     error: "",
   });
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   const history = useRef<ClipEdit[]>([]);
   const future = useRef<ClipEdit[]>([]);
@@ -41,7 +47,15 @@ export function useClipEdit(jobId: string, clipId: string) {
         if (data.error) {
           setState((s) => ({ ...s, loading: false, error: data.error }));
         } else {
-          setState({ edit: data.edit, words: data.words ?? [], clip: data.clip, loading: false, error: "" });
+          setState({
+            edit: data.edit,
+            words: data.words ?? [],
+            clip: data.clip,
+            sourceAvailable: data.sourceAvailable !== false,
+            sourceVideoUrl: data.sourceVideoUrl ?? null,
+            loading: false,
+            error: "",
+          });
         }
       })
       .catch((e) => setState((s) => ({ ...s, loading: false, error: String(e) })));
@@ -49,6 +63,12 @@ export function useClipEdit(jobId: string, clipId: string) {
       cancelled = true;
     };
   }, [jobId, clipId]);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, []);
 
   const save = useCallbackRef(async (edit: ClipEdit) => {
     setSaving(true);
@@ -72,7 +92,7 @@ export function useClipEdit(jobId: string, clipId: string) {
         history.current.push(s.edit);
         if (history.current.length > 100) history.current.shift();
         future.current = [];
-        const draft: ClipEdit = JSON.parse(JSON.stringify(s.edit));
+        const draft: ClipEdit = structuredClone(s.edit);
         const result = mutator(draft) ?? draft;
         result.updatedAt = new Date().toISOString();
         setDirty(true);
@@ -80,6 +100,8 @@ export function useClipEdit(jobId: string, clipId: string) {
         saveTimer.current = setTimeout(() => save(result), 1200);
         return { ...s, edit: result };
       });
+      setCanUndo(true);
+      setCanRedo(false);
     },
     [save]
   );
@@ -94,6 +116,8 @@ export function useClipEdit(jobId: string, clipId: string) {
       saveTimer.current = setTimeout(() => save(prev), 1200);
       return { ...s, edit: prev };
     });
+    setCanUndo(history.current.length > 0);
+    setCanRedo(true);
   }, [save]);
 
   const redo = useCallback(() => {
@@ -106,6 +130,8 @@ export function useClipEdit(jobId: string, clipId: string) {
       saveTimer.current = setTimeout(() => save(next), 1200);
       return { ...s, edit: next };
     });
+    setCanUndo(true);
+    setCanRedo(future.current.length > 0);
   }, [save]);
 
   const saveNow = useCallback(() => {
@@ -116,8 +142,8 @@ export function useClipEdit(jobId: string, clipId: string) {
     ...state,
     saving,
     dirty,
-    canUndo: history.current.length > 0,
-    canRedo: future.current.length > 0,
+    canUndo,
+    canRedo,
     update,
     undo,
     redo,

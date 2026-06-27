@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import os from "os";
 import { ffmpegPath } from "./ffmpeg";
+import { persistentSourcePath, clipsForJob } from "./store";
 import { spawn } from "child_process";
 
 // Audio waveform peaks for the timeline (3B).
@@ -15,7 +16,15 @@ function jobDir(jobId: string): string {
 }
 
 function sourcePath(jobId: string): string {
-  return path.join(jobDir(jobId), "source.mp4");
+  const persistent = persistentSourcePath(jobId);
+  if (existsSync(persistent)) return persistent;
+  const temp = path.join(jobDir(jobId), "source.mp4");
+  if (existsSync(temp)) return temp;
+  const clips = clipsForJob(jobId);
+  for (const c of clips) {
+    if (c.filePath && existsSync(c.filePath)) return c.filePath;
+  }
+  return temp;
 }
 
 function peaksPath(jobId: string, buckets: number): string {

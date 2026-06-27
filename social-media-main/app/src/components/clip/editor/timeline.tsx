@@ -111,9 +111,11 @@ export function Timeline({
     if (!cv) return;
     const ctx = cv.getContext("2d");
     if (!ctx) return;
-    cv.width = Math.ceil(width);
-    cv.height = AUDIO_H;
-    ctx.clearRect(0, 0, cv.width, cv.height);
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = Math.ceil(width) * dpr;
+    cv.height = AUDIO_H * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, Math.ceil(width), AUDIO_H);
     if (!peaks || !peaks.length || !film) return;
     const srcDur = film.sourceDurationSec || 1;
     const mid = AUDIO_H / 2;

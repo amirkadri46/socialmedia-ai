@@ -370,6 +370,12 @@ export interface CaptionConfig {
   font: CaptionFont;
   effects: CaptionEffects;
   offset?: { x: number; y: number }; // drag-to-reposition (normalized 0–1; overrides position)
+  // Structural layout modifiers (optional; absent = legacy behavior driven by font/effects).
+  layoutVariant?: "full-box" | "bubble" | "glow" | "stacked"; // container/layout treatment
+  textTransform?: "uppercase" | "none"; // overrides font.uppercase when set
+  textShadow?: string; // CSS text-shadow / drop-shadow descriptor
+  textStroke?: string; // CSS text-stroke descriptor (e.g. "2px #000")
+  containerBgColor?: string; // background color behind the caption container
 }
 
 export interface TextOverlayStyle {

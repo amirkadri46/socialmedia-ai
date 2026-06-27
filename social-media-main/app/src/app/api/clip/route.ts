@@ -1,13 +1,13 @@
+import { NextResponse } from "next/server";
 import { v4 as uuid } from "uuid";
 import { runClipPipeline } from "@/lib/clip/clipPipeline";
-import { readJobs } from "@/lib/clip/store";
+import { repos } from "@/lib/db";
 import type { ClipJob } from "@/lib/types";
 
 export const maxDuration = 300;
 
-// List all jobs (used by /clip/projects).
 export async function GET() {
-  return Response.json(readJobs());
+  return NextResponse.json(await repos.clipJobs.getAll());
 }
 
 function buildJob(partial: Partial<ClipJob>): ClipJob {
@@ -41,23 +41,43 @@ export async function POST(request: Request) {
   let uploadBuffer: Buffer | undefined;
   let uploadExt: string | undefined;
 
-  if (contentType.includes("multipart/form-data")) {
-    const form = await request.formData();
-    const jobJson = form.get("job");
-    const file = form.get("file");
-    const partial = jobJson ? (JSON.parse(String(jobJson)) as Partial<ClipJob>) : {};
-    job = buildJob(partial);
-    if (file && typeof file !== "string") {
-      const f = file as File;
-      uploadBuffer = Buffer.from(await f.arrayBuffer());
-      uploadExt = f.name.split(".").pop() || "mp4";
-      if (!job.sourceTitle || job.sourceTitle === "Untitled video") {
-        job.sourceTitle = f.name.replace(/\.[^.]+$/, "");
+  try {
+    if (contentType.includes("multipart/form-data")) {
+      const form = await request.formData();
+      const jobJson = form.get("job");
+      const file = form.get("file");
+      let partial: Partial<ClipJob> = {};
+      if (jobJson) {
+        try {
+          partial = JSON.parse(String(jobJson)) as Partial<ClipJob>;
+        } catch {
+          return new Response(JSON.stringify({ error: "Invalid job JSON in form data." }), { status: 400 });
+        }
       }
+      job = buildJob(partial);
+      if (file && typeof file !== "string") {
+        const f = file as File;
+        const MAX_SOURCE_BYTES = 500 * 1024 * 1024; // 500 MB
+        if (f.size > MAX_SOURCE_BYTES) {
+          return new Response(JSON.stringify({ error: "File too large (max 500 MB)." }), { status: 413 });
+        }
+        uploadBuffer = Buffer.from(await f.arrayBuffer());
+        uploadExt = f.name.split(".").pop() || "mp4";
+        if (!job.sourceTitle || job.sourceTitle === "Untitled video") {
+          job.sourceTitle = f.name.replace(/\.[^.]+$/, "");
+        }
+      }
+    } else {
+      let partial: Partial<ClipJob>;
+      try {
+        partial = (await request.json()) as Partial<ClipJob>;
+      } catch {
+        return new Response(JSON.stringify({ error: "Invalid JSON in request body." }), { status: 400 });
+      }
+      job = buildJob(partial);
     }
-  } else {
-    const partial = (await request.json()) as Partial<ClipJob>;
-    job = buildJob(partial);
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : "Failed to parse request." }), { status: 400 });
   }
 
   const encoder = new TextEncoder();
@@ -66,8 +86,6 @@ export async function POST(request: Request) {
     async start(controller) {
       try {
         await runClipPipeline({ job, uploadBuffer, uploadExt }, (progress) => {
-          // If the client closed the modal/navigated away, keep the pipeline running
-          // (it persists to the store) but stop trying to write to a dead stream.
           if (clientGone) return;
           try {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(progress)}\n\n`));
@@ -91,21 +109,13 @@ export async function POST(request: Request) {
                 })}\n\n`
               )
             );
-          } catch {
-            /* client gone */
-          }
+          } catch { /* client gone */ }
         }
       } finally {
-        try {
-          controller.close();
-        } catch {
-          /* already closed */
-        }
+        try { controller.close(); } catch { /* already closed */ }
       }
     },
-    cancel() {
-      clientGone = true;
-    },
+    cancel() { clientGone = true; },
   });
 
   return new Response(stream, {

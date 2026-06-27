@@ -14,6 +14,11 @@ import {
   Scissors,
   Share2,
   LayoutDashboard,
+  Download,
+  Library,
+  Megaphone,
+  ListChecks,
+  History,
 } from "lucide-react";
 import { Sidebar } from "@/components/ui/sidebar";
 
@@ -28,6 +33,33 @@ const SECTIONS = [
       { title: "Dashboard", href: "/outreach/dashboard", icon: LayoutDashboard },
       { title: "Leads", href: "/outreach/prospects", icon: Users },
       { title: "Templates", href: "/outreach/templates", icon: FileText },
+    ],
+  },
+  {
+    id: "library",
+    icon: Library,
+    label: "Library",
+    items: [
+      { title: "Video Library", href: "/library", icon: Library },
+    ],
+  },
+  {
+    id: "campaigns",
+    icon: Megaphone,
+    label: "Campaigns",
+    items: [
+      { title: "Campaigns", href: "/campaigns", icon: Megaphone },
+      { title: "Queue", href: "/campaigns/queue", icon: ListChecks },
+      { title: "History", href: "/campaigns/history", icon: History },
+    ],
+  },
+  {
+    id: "downloader",
+    icon: Download,
+    label: "Downloader",
+    items: [
+      { title: "Downloads", href: "/downloader", icon: Download },
+      { title: "Settings", href: "/downloader/settings", icon: Settings2 },
     ],
   },
   {
@@ -57,6 +89,9 @@ type SectionId = (typeof SECTIONS)[number]["id"];
 
 function getSectionFromPath(pathname: string): SectionId {
   if (pathname.startsWith("/outreach")) return "outreach";
+  if (pathname.startsWith("/library")) return "library";
+  if (pathname.startsWith("/campaigns")) return "campaigns";
+  if (pathname.startsWith("/downloader")) return "downloader";
   if (pathname.startsWith("/clip")) return "clipping";
   return "content";
 }

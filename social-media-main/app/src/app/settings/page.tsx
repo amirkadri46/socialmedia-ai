@@ -140,7 +140,10 @@ export default function SettingsPage() {
 
   useEffect(() => {
     fetch("/api/settings")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to load settings");
+        return r.json();
+      })
       .then((s) => {
         setProvider(s.provider ?? "openrouter");
         setOpenaiKey(s.openaiApiKey ?? "");
@@ -171,22 +174,28 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     setLoading(true);
-    await fetch("/api/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        provider, openaiApiKey: openaiKey, openrouterApiKey: openrouterKey, openrouterModel, geminiModel,
-        apifyApiToken: apifyToken, linkedinCharLimit, emailLengthGuidance,
-        whatsappCharLimit, senderName, defaultLocationLabel,
-        transcriptionProvider, deepgramApiKey, assemblyaiApiKey,
-        defaultCaptionPreset, defaultAspectRatio, defaultClipLength, ytDlpCookiesBrowser, ytDlpCookiesText,
-        editorShortcuts: shortcuts,
-        metaAppId, metaAppSecret, enableSocialPublish,
-      }),
-    });
-    setLoading(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider, openaiApiKey: openaiKey, openrouterApiKey: openrouterKey, openrouterModel, geminiModel,
+          apifyApiToken: apifyToken, linkedinCharLimit, emailLengthGuidance,
+          whatsappCharLimit, senderName, defaultLocationLabel,
+          transcriptionProvider, deepgramApiKey, assemblyaiApiKey,
+          defaultCaptionPreset, defaultAspectRatio, defaultClipLength, ytDlpCookiesBrowser, ytDlpCookiesText,
+          editorShortcuts: shortcuts,
+          metaAppId, metaAppSecret, enableSocialPublish,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to save settings");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      alert("Failed to save settings");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const setShortcut = (id: ShortcutAction, combo: string) => setShortcuts((s) => ({ ...s, [id]: combo }));

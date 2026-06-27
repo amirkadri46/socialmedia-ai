@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getClip } from "@/lib/clip/store";
+import { repos } from "@/lib/db";
 import { detectFaceCrop } from "@/lib/clip/face-crop";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,7 @@ export async function POST(
 ) {
   const { jobId, clipId } = await params;
 
-  const clip = getClip(clipId);
+  const clip = await repos.clips.get(clipId);
   if (!clip) {
     return NextResponse.json({ error: "Clip not found." }, { status: 404 });
   }

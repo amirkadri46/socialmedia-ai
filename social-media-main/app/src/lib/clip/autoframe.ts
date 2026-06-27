@@ -5,7 +5,7 @@ import OpenAI from "openai";
 import { ffmpeg, probe } from "./ffmpeg";
 import { buildCropRect, buildCropRectForAspect } from "./face-crop";
 import { paneCount, slotAspect, splitSlots } from "./layout-geom";
-import { readSettings } from "../settings";
+import { persistentSourcePath, clipsForJob } from "./store";
 import type { LayoutKind, LayoutSegment, SpeakerPane } from "../types";
 
 // ── Auto Fill/Fit reframe (3C) ──────────────────────────────────────────────────────
@@ -29,8 +29,16 @@ export interface FrameClass {
 const MIN_RUN_SEC = 0.5; // drop sub-0.5s flickers
 const MAX_FRAMES = 48; // cap sampled frames (keeps the contact sheet + cost bounded)
 
+/** Resolve the source video for a job — persistent copy first, then tmpdir, then first clip file. */
 function sourcePath(jobId: string): string {
-  return path.join(os.tmpdir(), "social-clipper", jobId, "source.mp4");
+  const persistent = persistentSourcePath(jobId);
+  if (existsSync(persistent)) return persistent;
+  const temp = path.join(os.tmpdir(), "social-clipper", jobId, "source.mp4");
+  if (existsSync(temp)) return temp;
+  for (const c of clipsForJob(jobId)) {
+    if (c.filePath && existsSync(c.filePath)) return c.filePath;
+  }
+  return temp; // callers check existsSync and throw a user-friendly error
 }
 
 /**
@@ -169,7 +177,7 @@ async function detectFaces(src: string, atSec: number, maxN: number): Promise<{ 
       `Return [] if no clear faces.`;
 
     if (process.env.GEMINI_API_KEY) {
-      const model = readSettings().geminiModel || "gemini-2.0-flash";
+      const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
       const res = await fetch(url, {
         method: "POST",
@@ -273,7 +281,7 @@ async function classifyContactSheet(
     if (!existsSync(sheet)) throw new Error("Contact sheet extraction failed.");
     const b64 = readFileSync(sheet).toString("base64");
 
-    const model = readSettings().geminiModel || "gemini-2.0-flash";
+    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
     const prompt =
       `This image is a contact sheet of ${frameCount} video frames laid out in a ${cols}-column by ${rows}-row grid, ` +

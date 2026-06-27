@@ -34,6 +34,7 @@ export function CropModal({
   onEnableLayout,
   onApply,
   onClose,
+  sourceVideoUrl,
 }: {
   jobId: string;
   clipId: string;
@@ -45,6 +46,7 @@ export function CropModal({
   onEnableLayout?: (kind: LayoutKind) => void; // switch single/split/triple/quad
   onApply: (c: CropRect, cropAspect: string) => void;
   onClose: () => void;
+  sourceVideoUrl?: string | null;
 }) {
   const frameRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -242,7 +244,7 @@ export function CropModal({
         </div>
 
         <div ref={frameRef} className="relative w-full overflow-hidden rounded-lg bg-black" style={{ aspectRatio: `${dims.w} / ${dims.h}` }}>
-          <video ref={videoRef} src={`/api/clip/${jobId}/source`} className="h-full w-full object-contain" muted playsInline preload="auto" />
+          <video ref={videoRef} src={sourceVideoUrl ?? `/api/clip/${jobId}/source`} className="h-full w-full object-contain" muted playsInline preload="auto" />
           <div
             onPointerDown={startMove}
             className="absolute cursor-move border-2 border-white"

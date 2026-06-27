@@ -22,7 +22,7 @@ function buildTimedTranscript(words: Word[], start: number, end: number): string
     bucket = [];
   };
   for (const w of words) {
-    if (w.start < start || w.end > end) continue;
+    if (w.start < start || w.start >= end) continue;
     if (bucketStart < 0) bucketStart = w.start;
     bucket.push(w);
     // flush roughly every ~12s of speech to keep timestamp granularity

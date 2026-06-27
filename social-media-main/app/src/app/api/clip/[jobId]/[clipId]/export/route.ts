@@ -1,5 +1,5 @@
 import { exportEdit } from "@/lib/clip/editRender";
-import { readEdit, readTranscript, getClip, getJob, getDefaultEdit } from "@/lib/clip/store";
+import { repos } from "@/lib/db";
 
 export const maxDuration = 300;
 
@@ -9,12 +9,14 @@ export async function POST(
   { params }: { params: Promise<{ jobId: string; clipId: string }> }
 ) {
   const { jobId, clipId } = await params;
-  const clip = getClip(clipId);
-  const job = getJob(jobId);
+  const [clip, job, words] = await Promise.all([
+    repos.clips.get(clipId),
+    repos.clipJobs.get(jobId),
+    repos.clipTranscripts.get(jobId),
+  ]);
   if (!clip || !job) return new Response("Clip not found", { status: 404 });
 
-  const edit = readEdit(clipId) ?? getDefaultEdit(clip, job);
-  const words = readTranscript(jobId);
+  const edit = (await repos.clipEdits.get(clipId)) ?? repos.clipEdits.getDefault(clip, job);
 
   const encoder = new TextEncoder();
   let gone = false;
@@ -29,7 +31,7 @@ export async function POST(
         }
       };
       try {
-        await exportEdit(edit, words, (p) => send(p));
+        await exportEdit(edit, words ?? [], (p) => send(p));
       } catch (err) {
         send({ percent: 0, log: err instanceof Error ? err.message : "Export failed" });
       } finally {

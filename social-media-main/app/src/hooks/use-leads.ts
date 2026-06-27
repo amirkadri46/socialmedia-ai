@@ -67,42 +67,54 @@ export function useLeads() {
   // Patch + persist to the server.
   const updateProspect = useCallback(
     async (prospectId: string, updates: Partial<Prospect>) => {
+      // Optimistic update
       patchLocal(prospectId, updates);
       try {
-        await fetch("/api/outreach/lists", {
+        const res = await fetch("/api/outreach/lists", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ listId: activeListId, prospectId, updates }),
         });
+        if (!res.ok) throw new Error("Failed to update");
       } catch {
-        /* swallow — local state already updated */
+        // Rollback on failure by reloading list
+        alert("Failed to update prospect on server");
+        loadActiveList(activeListId);
       }
     },
-    [activeListId, patchLocal]
+    [activeListId, patchLocal, loadActiveList]
   );
 
   const deleteProspect = useCallback(
     async (prospectId: string) => {
+      // Optimistic update
       setActiveList((prev) =>
         prev ? { ...prev, prospects: prev.prospects.filter((p) => p.id !== prospectId) } : prev
       );
       try {
-        await fetch(`/api/outreach/lists?listId=${activeListId}&prospectId=${prospectId}`, {
+        const res = await fetch(`/api/outreach/lists?listId=${activeListId}&prospectId=${prospectId}`, {
           method: "DELETE",
         });
+        if (!res.ok) throw new Error("Failed to delete");
       } catch {
-        /* swallow */
+        alert("Failed to delete prospect on server");
+        loadActiveList(activeListId);
       }
     },
-    [activeListId]
+    [activeListId, loadActiveList]
   );
 
   const deleteList = useCallback(
     async (id: string) => {
-      await fetch(`/api/outreach/lists?id=${id}`, { method: "DELETE" });
-      setActiveList(null);
-      setActiveListId("");
-      await loadMetas();
+      try {
+        const res = await fetch(`/api/outreach/lists?id=${id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Failed to delete list");
+        setActiveList(null);
+        setActiveListId("");
+        await loadMetas();
+      } catch (err) {
+        alert("Failed to delete list");
+      }
     },
     [loadMetas]
   );

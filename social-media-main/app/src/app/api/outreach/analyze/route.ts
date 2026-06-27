@@ -1,7 +1,6 @@
 import OpenAI from "openai";
-import { readSettings } from "@/lib/settings";
+import { repos } from "@/lib/db";
 import { buildLlmClient, parseJsonResponse } from "@/lib/llm-client";
-import { readProspectLists, writeProspectLists, writeProspectListAsCsv, getActiveTemplate } from "@/lib/outreach";
 import { levelFromScore } from "@/lib/lead-scoring";
 import type { Prospect, OfferTemplate, ColdCallNotes, WebsiteStatus } from "@/lib/types";
 
@@ -218,10 +217,16 @@ function normalizeColdCallNotes(notes: Partial<ColdCallNotes> | undefined, p: Pr
 // ── Route ──────────────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
-  const { listId, prospectIds, regenerate, messagesOnly } = (await req.json()) as AnalyzeBody;
+  let body: AnalyzeBody;
+  try {
+    body = (await req.json()) as AnalyzeBody;
+  } catch {
+    return sseError("Invalid JSON in request body.");
+  }
+  const { listId, prospectIds, regenerate, messagesOnly } = body;
 
-  const settings = readSettings();
-  const template = getActiveTemplate();
+  const settings = await repos.settings.get();
+  const template = await repos.offerTemplates.getActive();
 
   let client: OpenAI;
   let model: string;
@@ -231,8 +236,7 @@ export async function POST(req: Request) {
     return sseError(err instanceof Error ? err.message : String(err));
   }
 
-  const lists = readProspectLists();
-  const list = lists.find((l) => l.id === listId);
+  const list = await repos.prospects.getList(listId);
   if (!list) return sseError("List not found.");
   if (!template) {
     return sseError("No active offer template — go to Outreach › Templates.");
@@ -268,17 +272,13 @@ export async function POST(req: Request) {
         }
       };
 
-      // Persist helper — re-reads to merge with any concurrent writes, then writes patches.
-      const persist = (patches: Map<string, Partial<Prospect>>) => {
-        const fresh = readProspectLists();
-        const freshList = fresh.find((l) => l.id === listId);
-        if (!freshList) return;
-        for (const fp of freshList.prospects) {
-          const patch = patches.get(fp.id);
-          if (patch) Object.assign(fp, patch);
-        }
-        writeProspectLists(fresh);
-        try { writeProspectListAsCsv(freshList); } catch { /* best-effort csv */ }
+      // Persist helper — one batch write per call (single file write / single DB upsert).
+      const persist = async (patches: Map<string, Partial<Prospect>>) => {
+        const updated = [...patches.keys()].flatMap((id) => {
+          const p = targets.find((t) => t.id === id);
+          return p ? [p] : [];
+        });
+        if (updated.length) await repos.prospects.upsertProspects(listId, updated);
       };
 
       try {
@@ -308,7 +308,7 @@ export async function POST(req: Request) {
                 }
               })
             );
-            persist(patches);
+            await persist(patches);
             completed += batch.length;
             for (const p of batch) {
               send({ phase: "analyzing", completed, total, lastId: p.id, lead: p });
@@ -318,8 +318,13 @@ export async function POST(req: Request) {
 
         // ── Phase 2: generate messages ──
         completed = 0;
-        for (let i = 0; i < targets.length && !gone; i += CONCURRENCY) {
-          const batch = targets.slice(i, i + CONCURRENCY);
+        // When messagesOnly, callers skip Phase 1, so unanalyzed prospects have no
+        // outreachAngle/websiteStatus — skip them to avoid garbage LLM output.
+        const phase2Targets = messagesOnly
+          ? targets.filter((p) => p.analysisStatus === "done")
+          : targets;
+        for (let i = 0; i < phase2Targets.length && !gone; i += CONCURRENCY) {
+          const batch = phase2Targets.slice(i, i + CONCURRENCY);
           const patches = new Map<string, Partial<Prospect>>();
           await Promise.all(
             batch.map(async (p) => {
@@ -333,7 +338,7 @@ export async function POST(req: Request) {
               }
             })
           );
-          persist(patches);
+          await persist(patches);
           completed += batch.length;
           for (const p of batch) {
             send({ phase: "generating", completed, total, lastId: p.id, lead: p });

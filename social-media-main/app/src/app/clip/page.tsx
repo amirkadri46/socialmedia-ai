@@ -41,7 +41,7 @@ import { CaptionPreview } from "@/components/clip/caption-preview";
 const CLIP_MODELS = ["ClipBasic", "ClipAdvanced", "Auto"];
 const GENRES = ["Auto", "Talking & podcast", "Journey & tutorial", "Hot take", "Story", "Educational"];
 const CLIP_LENGTHS = ["Auto (0-3m)", "<30s", "30s-60s", "60s-90s"];
-const LANGUAGES = ["English", "Spanish", "French", "German", "Portuguese", "Hindi"];
+const LANGUAGES = ["English", "Spanish", "French", "German", "Portuguese", "Hindi", "Hinglish"];
 const ASPECT_RATIOS = ["9:16", "1:1", "16:9"];
 
 // Background-safe clipping: the New Clip form + any running job survive navigation.

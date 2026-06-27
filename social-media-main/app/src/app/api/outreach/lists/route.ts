@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { rmSync, existsSync } from "fs";
+import { rmSync, existsSync, writeFileSync, mkdirSync } from "fs";
 import path from "path";
 import { v4 as uuid } from "uuid";
-import { readProspectLists, writeProspectLists, writeProspectListAsCsv, defaultLeadFields } from "@/lib/outreach";
+import { repos } from "@/lib/db";
+import { writeProspectListAsCsv, defaultLeadFields } from "@/lib/outreach";
 import type { Prospect, ProspectList } from "@/lib/types";
 
 const CSV_DIR = path.join(process.cwd(), "..", "data", "csv");
@@ -12,7 +13,6 @@ const WRITABLE_PROSPECT_FIELDS = new Set<string>([
   "fullName", "firstName", "headline", "company", "jobTitle", "location",
   "profileUrl", "email", "bio", "website", "followers", "customNotes",
   "linkedinMessage", "emailMessage", "draftStatus", "lastDraftedAt",
-  // ── Lead Intelligence ──
   "businessCategory", "rating", "reviewCount", "priceRange", "phone", "address", "reviewsRaw",
   "analysisStatus", "priorityScore", "priorityLevel", "reviewSummary", "websiteStatus",
   "outreachAngle", "lastAnalyzedAt", "whatsappMessage", "coldCallNotes",
@@ -20,24 +20,18 @@ const WRITABLE_PROSPECT_FIELDS = new Set<string>([
   "priceQuoted", "priceConfirmed",
 ]);
 
-// Fields that, when present in the mapping, indicate a Google Maps lead source
 const MAPS_FIELDS = ["businessCategory", "rating", "reviewCount", "priceRange", "address", "reviewsRaw"];
 
-// GET /api/outreach/lists — return all lists (with prospect count, not full data for perf)
 export async function GET() {
-  const lists = readProspectLists();
-  return NextResponse.json(
-    lists.map((l) => ({
-      id: l.id,
-      name: l.name,
-      createdAt: l.createdAt,
-      count: l.prospects.length,
-    }))
-  );
+  const lists = await repos.prospects.getLists();
+  return NextResponse.json(lists.map((l) => ({
+    id: l.id,
+    name: l.name,
+    createdAt: l.createdAt,
+    count: l.prospects.length,
+  })));
 }
 
-// POST /api/outreach/lists — create list from CSV import result
-// Body: { listName, rows, mapping, csvText? }
 export async function POST(req: Request) {
   const { listName, rows, mapping, csvText, detectedSource } = (await req.json()) as {
     listName: string;
@@ -47,7 +41,6 @@ export async function POST(req: Request) {
     detectedSource?: "csv" | "maps";
   };
 
-  // A list is a "maps" list if explicitly flagged OR any Maps-specific field is mapped.
   const mappedFields = new Set(Object.values(mapping));
   const isMaps = detectedSource === "maps" || MAPS_FIELDS.some((f) => mappedFields.has(f));
 
@@ -60,18 +53,12 @@ export async function POST(req: Request) {
   const prospects: Prospect[] = rows.map((row) => {
     const mapped: Record<string, string | number> = {};
     const rawData: Record<string, string> = {};
-
     for (const [csvCol, value] of Object.entries(row)) {
       const field = mapping[csvCol];
-      if (!field || field === "skip") {
-        rawData[csvCol] = value;
-      } else if (field === "rawData") {
-        rawData[csvCol] = value;
-      } else {
-        mapped[field] = value;
-      }
+      if (!field || field === "skip") rawData[csvCol] = value;
+      else if (field === "rawData") rawData[csvCol] = value;
+      else mapped[field] = value;
     }
-
     return {
       id: uuid(),
       fullName: mapped.fullName as string | undefined,
@@ -89,7 +76,6 @@ export async function POST(req: Request) {
       draftStatus: "idle",
       source: isMaps ? "maps" : "csv",
       rawData: Object.keys(rawData).length ? rawData : undefined,
-      // ── Google Maps inputs ──
       businessCategory: mapped.businessCategory as string | undefined,
       rating: num(mapped.rating),
       reviewCount: num(mapped.reviewCount),
@@ -97,7 +83,6 @@ export async function POST(req: Request) {
       phone: mapped.phone as string | undefined,
       address: mapped.address as string | undefined,
       reviewsRaw: mapped.reviewsRaw as string | undefined,
-      // ── CRM/analysis defaults ──
       ...defaultLeadFields(),
     };
   });
@@ -109,24 +94,21 @@ export async function POST(req: Request) {
     prospects,
   };
 
-  const lists = readProspectLists();
-  lists.push(newList);
-  writeProspectLists(lists);
-  writeProspectListAsCsv(newList);
+  await repos.prospects.upsertList(newList);
+  // Keep CSV export for file backend convenience
+  try { writeProspectListAsCsv(newList); } catch { /* ok if data dir doesn't exist */ }
 
-  // Also save the original raw CSV if provided
   if (csvText) {
     const safeName = (listName || "list").replace(/[^a-z0-9]/gi, "-").toLowerCase().slice(0, 40);
-    const { writeFileSync, mkdirSync, existsSync } = await import("fs");
-    if (!existsSync(CSV_DIR)) mkdirSync(CSV_DIR, { recursive: true });
-    writeFileSync(path.join(CSV_DIR, `${safeName}-${newList.id.slice(0, 8)}-original.csv`), csvText, "utf-8");
+    try {
+      if (!existsSync(CSV_DIR)) mkdirSync(CSV_DIR, { recursive: true });
+      writeFileSync(path.join(CSV_DIR, `${safeName}-${newList.id.slice(0, 8)}-original.csv`), csvText, "utf-8");
+    } catch { /* ignore if data dir not writable */ }
   }
 
   return NextResponse.json(newList, { status: 201 });
 }
 
-// PATCH /api/outreach/lists — update a prospect within a list
-// Body: { listId, prospectId, updates }
 export async function PATCH(req: Request) {
   const { listId, prospectId, updates } = (await req.json()) as {
     listId: string;
@@ -134,19 +116,16 @@ export async function PATCH(req: Request) {
     updates: Partial<Prospect>;
   };
 
-  const lists = readProspectLists();
-  const list = lists.find((l) => l.id === listId);
+  const list = await repos.prospects.getList(listId);
   if (!list) return NextResponse.json({ error: "List not found" }, { status: 404 });
 
   const prospect = list.prospects.find((p) => p.id === prospectId);
   if (!prospect) return NextResponse.json({ error: "Prospect not found" }, { status: 404 });
 
-  // Only apply fields that callers are permitted to write — prevent overwriting id, source, rawData
   const safeUpdates: Partial<Prospect> = {};
   for (const [k, v] of Object.entries(updates)) {
     if (WRITABLE_PROSPECT_FIELDS.has(k)) (safeUpdates as Record<string, unknown>)[k] = v;
   }
-  // Moving to "contacted" auto-stamps lastContactedAt if not already set.
   if (
     safeUpdates.leadStatus === "contacted" &&
     !prospect.lastContactedAt &&
@@ -154,57 +133,50 @@ export async function PATCH(req: Request) {
   ) {
     safeUpdates.lastContactedAt = new Date().toISOString();
   }
-  Object.assign(prospect, safeUpdates);
-  writeProspectLists(lists);
-  writeProspectListAsCsv(list);
 
-  return NextResponse.json(prospect);
+  const updated = { ...prospect, ...safeUpdates };
+  await repos.prospects.upsertProspect(listId, updated);
+  // Skip full-CSV rebuild on single-field updates — the CSV is a convenience export
+  // only and rebuilding it on every PATCH is O(n) per update (quadratic for bulk ops).
+  return NextResponse.json(updated);
 }
 
-// DELETE /api/outreach/lists?id= — delete a list
-// DELETE /api/outreach/lists?listId=&prospectId= — delete a single prospect from a list
 export async function DELETE(req: Request) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   const listId = searchParams.get("listId");
   const prospectId = searchParams.get("prospectId");
 
-  // Single-prospect delete
   if (listId && prospectId) {
-    const lists = readProspectLists();
-    const list = lists.find((l) => l.id === listId);
+    const list = await repos.prospects.getList(listId);
     if (!list) return NextResponse.json({ error: "List not found" }, { status: 404 });
-    const before = list.prospects.length;
-    list.prospects = list.prospects.filter((p) => p.id !== prospectId);
-    if (list.prospects.length === before) {
-      return NextResponse.json({ error: "Prospect not found" }, { status: 404 });
-    }
-    writeProspectLists(lists);
-    writeProspectListAsCsv(list);
+    const exists = list.prospects.some((p) => p.id === prospectId);
+    if (!exists) return NextResponse.json({ error: "Prospect not found" }, { status: 404 });
+    await repos.prospects.deleteProspect(listId, prospectId);
     return NextResponse.json({ ok: true });
   }
 
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const lists = readProspectLists();
+  const lists = await repos.prospects.getLists();
   const target = lists.find((l) => l.id === id);
-  const filtered = lists.filter((l) => l.id !== id);
-  if (filtered.length === lists.length) {
-    return NextResponse.json({ error: "List not found" }, { status: 404 });
-  }
+  if (!target) return NextResponse.json({ error: "List not found" }, { status: 404 });
 
-  // Delete CSV files FIRST so that a crash after this point doesn't leave orphan files
-  // with no way to reconstruct the filenames (the list entry would already be gone from JSON)
-  if (target && existsSync(CSV_DIR)) {
-    const shortId = id.slice(0, 8);
-    const safeName = target.name.replace(/[^a-z0-9]/gi, "-").toLowerCase().slice(0, 40);
-    for (const suffix of ["", "-original"]) {
-      const csvFile = path.join(CSV_DIR, `${safeName}-${shortId}${suffix}.csv`);
-      if (existsSync(csvFile)) rmSync(csvFile);
+  // Delete from the JSON store first (source of truth) so a CSV-cleanup failure
+  // can never leave the list present in JSON with its CSV already gone.
+  await repos.prospects.deleteList(id);
+
+  // Best-effort CSV cleanup (file backend only; no-op if not present).
+  try {
+    if (existsSync(CSV_DIR)) {
+      const shortId = id.slice(0, 8);
+      const safeName = target.name.replace(/[^a-z0-9]/gi, "-").toLowerCase().slice(0, 40);
+      for (const suffix of ["", "-original"]) {
+        const csvFile = path.join(CSV_DIR, `${safeName}-${shortId}${suffix}.csv`);
+        if (existsSync(csvFile)) rmSync(csvFile);
+      }
     }
-  }
-
-  writeProspectLists(filtered);
+  } catch { /* ignore */ }
 
   return NextResponse.json({ ok: true });
 }

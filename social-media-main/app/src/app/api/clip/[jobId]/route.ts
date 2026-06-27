@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
-import { getJob, clipsForJob, getLiveProgress } from "@/lib/clip/store";
+import { repos } from "@/lib/db";
 
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ jobId: string }> }
 ) {
   const { jobId } = await params;
-  const job = getJob(jobId);
+  const [job, clips, progress] = await Promise.all([
+    repos.clipJobs.get(jobId),
+    repos.clips.forJob(jobId),
+    repos.clipJobs.getProgress(jobId),
+  ]);
   if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
-  // Include the live progress snapshot (percent/logs/ETA) if the pipeline is still
-  // running — lets a reconnecting client resume the processing view, not just status.
-  return NextResponse.json({ job, clips: clipsForJob(jobId), progress: getLiveProgress(jobId) ?? null });
+  return NextResponse.json({ job, clips, progress: progress ?? null });
 }

@@ -67,22 +67,46 @@ export function CaptionLayer({
       <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
         {group.words.map((w, i) => {
           const active = i === group.activeIdx;
-          const text = config.font.uppercase ? w.text.toUpperCase() : w.text;
+          
+          let raw = w.text.replace(/,+$/, "");
+          if (i === 0) raw = raw.replace(/^[\s,.;:!?'"-]+/, "");
+
+          let isUppercase = config.font.uppercase;
+          let fontColor = w.color ?? config.font.color;
+          let highlightColor = config.effects.highlightColor;
+          let currentStroke = stroke;
+          let currentShadow = shadow;
+
+          if (config.preset === "Hormozi Style") {
+            isUppercase = true;
+            highlightColor = "#A3E635";
+            currentStroke = `${4 * scale}px ${config.font.strokeColor}`;
+            currentShadow = "0 2px 6px rgba(0,0,0,0.7)";
+          }
+
+          const isColorSwap = config.preset === "Ali Abdal Style" || config.preset === "Bubble Style";
+          if (isColorSwap) {
+            highlightColor = "#000000";
+            fontColor = "#A0A0A0";
+          }
+
+          const text = isUppercase ? raw.toUpperCase() : raw;
           const useBox = config.effects.animation === "box" || config.effects.wordBgColor;
           const popScale = active && config.effects.animation === "pop" ? 1.12 : 1;
+          
           return (
             <span
-              key={i}
+              key={w.start}
               style={{
                 fontFamily: config.font.family,
                 fontSize,
                 fontWeight: 800,
                 fontStyle: config.font.italic ? "italic" : undefined,
                 textDecoration: config.font.underline ? "underline" : undefined,
-                color: w.color ?? (active ? config.effects.highlightColor : config.font.color),
-                WebkitTextStroke: stroke,
+                color: active ? highlightColor : fontColor,
+                WebkitTextStroke: currentStroke,
                 paintOrder: "stroke fill",
-                textShadow: shadow,
+                textShadow: currentShadow,
                 backgroundColor: useBox
                   ? config.effects.wordBgColor || (active ? "transparent" : "rgba(255,255,255,0.92)")
                   : undefined,

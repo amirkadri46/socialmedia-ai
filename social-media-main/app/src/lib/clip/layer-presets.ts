@@ -43,10 +43,10 @@ export function defaultPreset(): LayerPreset {
     name: "Default branding",
     layers: [
       { id: uuid(), type: "banner", label: "Bottom banner", enabled: true, text: " ", bg: "#000000", widthPct: 100, sizePx: 70, x: 0.5, y: 0.93 },
-      { id: uuid(), type: "logo", label: "Logo", enabled: true, text: "KICK", color: "#53FC18", bold: true, sizePx: 64, x: 0.16, y: 0.93 },
-      { id: uuid(), type: "handle", label: "Social handle", enabled: true, text: "@zevon_labs", color: "#FFFFFF", sizePx: 34, x: 0.66, y: 0.94 },
+      { id: uuid(), type: "logo", label: "Logo", enabled: true, text: "YOUR BRAND", color: "#FFFFFF", bold: true, sizePx: 64, x: 0.16, y: 0.93 },
+      { id: uuid(), type: "handle", label: "Social handle", enabled: true, text: "@yourhandle", color: "#FFFFFF", sizePx: 34, x: 0.66, y: 0.94 },
       { id: uuid(), type: "subtitleSafe", label: "Subtitle safe-area", enabled: false, text: "Subtitle safe area", bg: "#1118271A", color: "#FFFFFF", opacity: 0.5, sizePx: 28, x: 0.5, y: 0.78, widthPct: 86 },
-      { id: uuid(), type: "watermark", label: "Watermark", enabled: false, text: "@zevon_labs", color: "#FFFFFF", opacity: 0.18, sizePx: 44, x: 0.5, y: 0.5 },
+      { id: uuid(), type: "watermark", label: "Watermark", enabled: false, text: "@yourhandle", color: "#FFFFFF", opacity: 0.18, sizePx: 44, x: 0.5, y: 0.5 },
     ],
   };
 }

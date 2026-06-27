@@ -40,7 +40,7 @@ export function editedToWindow(edit: ClipEdit, editedT: number): number {
   let acc = 0;
   for (const seg of keptSegments(edit)) {
     const len = seg.end - seg.start;
-    if (editedT <= acc + len) return seg.start + (editedT - acc);
+    if (editedT <= acc + len + 1e-4) return seg.start + Math.max(0, editedT - acc);
     acc += len;
   }
   // Past the end — clamp to last kept point.
@@ -57,8 +57,8 @@ export function editedToSource(edit: ClipEdit, editedT: number): number {
 export function windowToEdited(edit: ClipEdit, windowT: number): number {
   let acc = 0;
   for (const seg of keptSegments(edit)) {
-    if (windowT < seg.start) return acc; // inside a removed gap → snap to gap start
-    if (windowT <= seg.end) return acc + (windowT - seg.start);
+    if (windowT < seg.start - 1e-4) return acc; // inside a removed gap → snap to gap start
+    if (windowT <= seg.end + 1e-4) return acc + Math.max(0, windowT - seg.start);
     acc += seg.end - seg.start;
   }
   return acc;
@@ -67,8 +67,8 @@ export function windowToEdited(edit: ClipEdit, windowT: number): number {
 /** Next kept window time at/after a given window time (skips removed gaps). */
 export function nextKeptWindow(edit: ClipEdit, windowT: number): number | null {
   for (const seg of keptSegments(edit)) {
-    if (windowT < seg.start) return seg.start;
-    if (windowT < seg.end) return windowT;
+    if (windowT < seg.start - 1e-4) return seg.start;
+    if (windowT < seg.end - 1e-4) return windowT;
   }
   return null;
 }

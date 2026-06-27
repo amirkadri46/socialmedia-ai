@@ -76,6 +76,14 @@ Google Maps CSV → AI analysis (priorityScore + priorityLevel + businessCategor
 - **Dashboard:** `GET /api/outreach/stats` aggregates all lists; `/outreach/dashboard` renders 9 stat cards + CSS/SVG priority-distribution + pipeline-funnel charts (no chart dependency).
 - **UI:** built entirely from shadcn primitives in `components/outreach/` (`lead-table`, `lead-row`, `lead-detail-sheet`, `priority-badge`, `lead-status-select`, `filter-bar`, `analyze-progress-dialog`, `import-wizard`, `outreach-message-tabs`, `cold-call-card`, `stat-card`, `dashboard-charts`); state via `hooks/use-leads.ts` + `hooks/use-lead-filters.ts` (filters persist to `localStorage` per list id). `app/outreach/prospects/page.tsx` ("Leads" workspace) is a thin composition. `lead-table` uses **infinite scroll** (IntersectionObserver sentinel inside the ScrollArea grows a render window; no pagination) and a **row-selection** checkbox column (select-all in header) wired to a bulk-action bar in the page ("Analyze" = full re-run, "Create messages" = `messagesOnly`). `lead-row` has inline-editable **Price quoted** / **Price confirmed** (`priceQuoted`/`priceConfirmed` on `Prospect`) and a free-text **Note** column (reuses `customNotes`) — all persisted via the PATCH route. `templates/page.tsx` is built from `ui/card` + `ui/switch`. New primitives: `ui/avatar`, `ui/sonner` (Toaster mounted in `layout.tsx`); `ui/checkbox`/`ui/card`/`ui/switch` used by the leads/templates UI. Sidebar "Outreach" section → Dashboard / Leads / Templates.
 
+### Bulk Downloader (separate vertical: URLs/profiles → saved mp4 files)
+
+Self-contained vertical under `lib/downloader/` + `app/downloader/` + `api/downloader/`. Paste mixed YouTube Shorts + Instagram Reel URLs (or a creator profile URL to scrape every Short/Reel), and a process-level singleton queue downloads them concurrently to a configurable dir (`D:\downloaded videos\{YouTube|Instagram}\{Creator}\{Title}.mp4` + `.jpg`).
+
+- **Reuses** `lib/clip/ffmpeg.ts` (`run`/`ytDlpPath`/`ffmpegPath`/`ytDlpAvailable`) and the now-exported `cookieArgs` from `lib/clip/download.ts` (Instagram/YT cookies come from Clip Settings — no new cookie UI).
+- `engine.ts` = inspect + download one job; `scraper.ts` = profile URL → video URLs via `yt-dlp --flat-playlist`; `queue-runner.ts` = the singleton (2s tick, `concurrentDownloads` limit, retry loop, hot-reload-safe via `global.__dlRunner`).
+- Queue persists to `data/download-queue.json`, settings to `data/downloader-settings.json` (`store.ts`). Browser polls `GET /api/downloader/queue` every 2s. Routes: `queue` (GET/POST/DELETE), `scrape` (POST), `settings` (GET/POST). UI in `components/downloader/`.
+
 ### Clipping Pipeline (separate vertical: long video → viral clips)
 
 A self-contained second pipeline under `lib/clip/` + `app/clip/` + `api/clip/`, mirroring the SSE/settings/CSV patterns of the analysis pipeline.
@@ -191,6 +199,8 @@ Four additions on top of Phase 3, all preview+export parity where applicable:
 | Lead Dashboard | `/outreach/dashboard` | CRM dashboard: 9 metrics + priority/pipeline charts |
 | Leads | `/outreach/prospects` | Leads workspace: import, analyze, score, filter, message, CRM |
 | Templates | `/outreach/templates` | Offer templates feeding personalization prompts |
+| Downloads | `/downloader` | Bulk-download YouTube Shorts / Instagram Reels (paste URLs or scrape a creator profile) |
+| Downloader Settings | `/downloader/settings` | Save dir, quality, concurrency, retries |
 | New Clip | `/clip` | Paste a URL / upload → configure → live processing → ranked clips |
 | Clip Projects | `/clip/projects` | List of all clipping jobs |
 | Clip Results | `/clip/[jobId]` | Scored clip grid: preview, download, edit, schedule |

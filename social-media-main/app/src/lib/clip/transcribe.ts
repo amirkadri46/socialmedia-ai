@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from "fs";
 import path from "path";
 import { ffmpeg } from "./ffmpeg";
-import { readSettings } from "../settings";
+import { repos } from "../db";
 import type { Word } from "../types";
 
 /** Extract a compact mono audio track for transcription. */
@@ -42,7 +42,9 @@ async function transcribeDeepgram(audioPath: string, apiKey: string, language: s
   const json = await res.json();
   const words = json?.results?.channels?.[0]?.alternatives?.[0]?.words ?? [];
   return words.map((w: { word: string; punctuated_word?: string; start: number; end: number }) => ({
-    text: w.punctuated_word || w.word,
+    // Prefer Deepgram's punctuated form, but strip trailing commas so captions
+    // don't carry automated conversational commas (clean OpusClip-style look).
+    text: (w.punctuated_word || w.word).replace(/,+$/, ""),
     start: w.start,
     end: w.end,
   }));
@@ -75,10 +77,12 @@ async function transcribeAssemblyAI(audioPath: string, apiKey: string): Promise<
     const poll = await fetch(`https://api.assemblyai.com/v2/transcript/${id}`, {
       headers: { authorization: apiKey },
     });
+    if (!poll.ok) throw new Error(`AssemblyAI poll error ${poll.status}`);
     const data = await poll.json();
     if (data.status === "completed") {
       return (data.words ?? []).map((w: { text: string; start: number; end: number }) => ({
-        text: w.text,
+        // Strip trailing commas for the same clean caption look as Deepgram.
+        text: w.text.replace(/,+$/, ""),
         start: w.start / 1000,
         end: w.end / 1000,
       }));
@@ -92,7 +96,7 @@ async function transcribeAssemblyAI(audioPath: string, apiKey: string): Promise<
 // ── Public API ────────────────────────────────────────────────────────────────────
 
 export async function transcribe(videoPath: string, languageCode = "en"): Promise<Word[]> {
-  const settings = readSettings();
+  const settings = await repos.settings.get();
   const audioPath = await extractAudio(videoPath);
 
   switch (settings.transcriptionProvider) {

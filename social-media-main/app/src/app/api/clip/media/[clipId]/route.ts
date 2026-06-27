@@ -1,5 +1,6 @@
 import { existsSync, statSync, createReadStream } from "fs";
-import { getClip } from "@/lib/clip/store";
+import { repos } from "@/lib/db";
+import { serverClient } from "@/lib/db/client";
 import type { ReadStream } from "fs";
 
 export const dynamic = "force-dynamic";
@@ -10,8 +11,25 @@ export async function GET(
   { params }: { params: Promise<{ clipId: string }> }
 ) {
   const { clipId } = await params;
-  const clip = getClip(clipId);
-  if (!clip || !clip.filePath || !existsSync(clip.filePath)) {
+  if (!/^[a-zA-Z0-9-]+$/.test(clipId)) {
+    return new Response("Bad request", { status: 400 });
+  }
+
+  const clip = await repos.clips.get(clipId);
+  if (!clip || !clip.filePath) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  // In supabase mode, redirect to a short-lived signed URL from Storage.
+  if (process.env.STORAGE_BACKEND === "supabase") {
+    const { data, error } = await serverClient()
+      .storage.from("clips")
+      .createSignedUrl(clip.filePath, 3600);
+    if (error || !data) return new Response("Not found", { status: 404 });
+    return Response.redirect(data.signedUrl, 302);
+  }
+
+  if (!existsSync(clip.filePath)) {
     return new Response("Not found", { status: 404 });
   }
 

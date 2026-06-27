@@ -1,6 +1,6 @@
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "fs";
+import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, renameSync } from "fs";
 import path from "path";
 import type {
   ClipJob,
@@ -42,12 +42,26 @@ function ensureDataDir() {
 function writeFileAtomic(p: string, data: string): void {
   const tmp = `${p}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   writeFileSync(tmp, data, "utf-8");
-  renameSync(tmp, p);
+  try {
+    renameSync(tmp, p);
+  } catch (err) {
+    try { unlinkSync(tmp); } catch { /* best-effort cleanup */ }
+    throw err;
+  }
 }
 
 export function clipMediaDir(): string {
   if (!existsSync(CLIP_DIR)) mkdirSync(CLIP_DIR, { recursive: true });
   return CLIP_DIR;
+}
+
+/**
+ * Persistent path for the source video of a job (survives temp-dir clears and
+ * server restarts). The editor routes check this first before the temp dir.
+ */
+export function persistentSourcePath(jobId: string): string {
+  if (!existsSync(CLIP_DIR)) mkdirSync(CLIP_DIR, { recursive: true });
+  return path.join(CLIP_DIR, `source-${jobId}.mp4`);
 }
 
 /** Per-clip assets dir (uploaded media/b-roll/audio) under data/clips/assets/{clipId}. */
@@ -255,7 +269,7 @@ export function upsertPost(post: ScheduledPost): void {
 
 export function writeTranscript(jobId: string, words: Word[]): void {
   if (!existsSync(TRANSCRIPTS_DIR)) mkdirSync(TRANSCRIPTS_DIR, { recursive: true });
-  writeFileSync(path.join(TRANSCRIPTS_DIR, `${jobId}.json`), JSON.stringify(words), "utf-8");
+  writeFileAtomic(path.join(TRANSCRIPTS_DIR, `${jobId}.json`), JSON.stringify(words));
 }
 
 export function readTranscript(jobId: string): Word[] {
@@ -282,7 +296,7 @@ export function readEdit(clipId: string): ClipEdit | undefined {
 
 export function writeEdit(clipId: string, edit: ClipEdit): void {
   if (!existsSync(EDITS_DIR)) mkdirSync(EDITS_DIR, { recursive: true });
-  writeFileSync(path.join(EDITS_DIR, `${clipId}.json`), JSON.stringify(edit, null, 2), "utf-8");
+  writeFileAtomic(path.join(EDITS_DIR, `${clipId}.json`), JSON.stringify(edit, null, 2));
 }
 
 /** Seed a default ClipEdit from an existing Clip + its Job. */
@@ -337,7 +351,7 @@ export function readCaptionTemplates(): CaptionTemplate[] {
 
 export function writeCaptionTemplates(templates: CaptionTemplate[]): void {
   ensureDataDir();
-  writeFileSync(CAPTION_TEMPLATES_PATH, JSON.stringify(templates, null, 2), "utf-8");
+  writeFileAtomic(CAPTION_TEMPLATES_PATH, JSON.stringify(templates, null, 2));
 }
 
 // ── Caption prompt templates (reusable per-creator caption context) ─────────────────

@@ -1,19 +1,12 @@
 import { v4 as uuid } from "uuid";
+import { copyFileSync, existsSync } from "fs";
 import { downloadVideo, saveUpload } from "./download";
 import { transcribe, wordsToText } from "./transcribe";
 import { selectMoments, clipLengthRange } from "./moments";
 import { renderClip } from "./render";
-import {
-  upsertJob,
-  appendClips,
-  writeTranscript,
-  setLiveProgress,
-  clearLiveProgress,
-  isCancelRequested,
-  clearCancel,
-} from "./store";
+import { persistentSourcePath } from "./store";
+import { repos } from "../db";
 import type { ClipJob, ClipProgress, Clip, Moment, Word } from "../types";
-import { readSettings } from "../settings";
 
 // Render one clip at a time by default: two concurrent libx264 encodes plus the
 // Next.js server can exceed the memory of a small container (e.g. Railway), which
@@ -37,6 +30,7 @@ const LANGUAGE_CODES: Record<string, string> = {
   german: "de",
   portuguese: "pt",
   hindi: "hi",
+  hinglish: "hi-Latn",
 };
 
 function languageCode(label: string): string {
@@ -97,32 +91,34 @@ export async function runClipPipeline(
     const snapshot = { ...progress, log: [...progress.log], errors: [...progress.errors] };
     // Persist live progress so a client that navigated away can re-attach and keep
     // watching — the pipeline runs detached from any single HTTP request.
-    setLiveProgress(job.id, snapshot);
+    repos.clipJobs.setProgress(job.id, snapshot).catch((err) => {
+      console.error("[clip-pipeline] Failed to persist progress for job", job.id, err);
+    });
     onProgress(snapshot);
   };
   const log = (msg: string) => {
     progress.log.push(`${msg}`);
     emit();
   };
-  const setStatus = (s: ClipJob["status"], percent: number) => {
+  const setStatus = async (s: ClipJob["status"], percent: number) => {
     progress.status = s;
     progress.percent = percent;
     job.status = s;
-    upsertJob(job);
+    await repos.clipJobs.upsert(job);
     emit();
   };
   // Cancellation is the only thing that stops a running job. Checked between steps.
   const checkCancel = () => {
-    if (isCancelRequested(job.id)) throw new CanceledError();
+    if (repos.clipJobs.isCancelRequested(job.id)) throw new CanceledError();
   };
 
   try {
-    upsertJob(job);
+    await repos.clipJobs.upsert(job);
     const { min, max } = clipLengthRange(job.clipLengthMode);
 
     // 1. Ingest ──────────────────────────────────────────────────────────────────
     checkCancel();
-    setStatus("downloading", 5);
+    await setStatus("downloading", 5);
     log(`Fetching video "${job.sourceTitle}"`);
     log(`Curation method: ${job.clipModel}...`);
 
@@ -132,7 +128,7 @@ export async function runClipPipeline(
       sourcePath = res.path;
       if (res.meta.durationSec) job.sourceDurationSec = res.meta.durationSec;
     } else if (job.sourceUrl) {
-      const { ytDlpCookiesBrowser, ytDlpCookiesText } = readSettings();
+      const { ytDlpCookiesBrowser, ytDlpCookiesText } = await repos.settings.get();
       const res = await downloadVideo(job.sourceUrl, job.id, (line) => {
         // line looks like "Downloading 45.2%" — keep the decimal so percent is accurate.
         const pct = parseFloat(line.match(/([\d.]+)/)?.[1] ?? "0") || 0;
@@ -145,6 +141,13 @@ export async function runClipPipeline(
       throw new Error("Job has neither a source URL nor an uploaded file.");
     }
 
+    // Copy source to the persistent data/clips/ dir so the editor still works
+    // after the OS clears the temp directory or the server restarts.
+    const pSrc = persistentSourcePath(job.id);
+    if (!existsSync(pSrc)) {
+      try { copyFileSync(sourcePath, pSrc); } catch { /* non-fatal — temp path still usable for this session */ }
+    }
+
     const rangeEnd = job.rangeEndSec > 0 ? job.rangeEndSec : job.sourceDurationSec;
     progress.rangeLabel = `From ${fmtClock(job.rangeStartSec)} to ${fmtClock(rangeEnd)}, preferred clip length of ${min}-${max}s...`;
     progress.etaSeconds = Math.max(60, Math.round((rangeEnd - job.rangeStartSec) * 0.4));
@@ -153,16 +156,16 @@ export async function runClipPipeline(
 
     // 2. Transcribe ────────────────────────────────────────────────────────────────
     checkCancel();
-    setStatus("transcribing", 25);
+    await setStatus("transcribing", 25);
     log("Transcribing audio...");
     const langCode = languageCode(job.speechLanguage);
     const words: Word[] = await transcribe(sourcePath, langCode);
-    writeTranscript(job.id, words); // persist for the clip editor (Phase 2)
+    await repos.clipTranscripts.write(job.id, words); // persist for the clip editor (Phase 2)
     log(`Transcribed ${words.length} words.`);
 
     // 3. Select moments ──────────────────────────────────────────────────────────────
     checkCancel();
-    setStatus("selecting", 40);
+    await setStatus("selecting", 40);
     log("Processing & analyzing... finding the most viral moments");
     const moments: Moment[] = await selectMoments(words, job);
     progress.momentsTotal = moments.length;
@@ -170,7 +173,7 @@ export async function runClipPipeline(
     emit();
 
     // 4. Render each moment ──────────────────────────────────────────────────────────
-    setStatus("rendering", 50);
+    await setStatus("rendering", 50);
     const produced: Clip[] = [];
 
     await runWithConcurrency(moments, RENDER_CONCURRENCY, async (moment, i) => {
@@ -192,7 +195,7 @@ export async function runClipPipeline(
           title: moment.title,
           start: moment.start,
           end: moment.end,
-          durationSec: Math.round(moment.end - moment.start),
+          durationSec: Number((moment.end - moment.start).toFixed(2)),
           score: moment.score,
           hook: moment.hook,
           hookType: moment.hookType,
@@ -225,29 +228,29 @@ export async function runClipPipeline(
     // Persist clips sorted by score (highest rank = 1).
     produced.sort((a, b) => b.score - a.score);
     produced.forEach((c, idx) => (c.rank = idx + 1));
-    appendClips(produced);
+    await repos.clips.append(produced);
 
     job.errors = progress.errors;
-    setStatus("done", 100);
+    await setStatus("done", 100);
     log(`Done — ${produced.length} clips ready.`);
   } catch (err) {
     if (err instanceof CanceledError) {
-      setStatus("canceled", progress.percent);
+      await setStatus("canceled", progress.percent);
       log("Canceled by user.");
     } else {
       const msg = err instanceof Error ? err.message : "Unknown error";
       progress.errors.push(msg);
-      // Persist every collected error (including per-clip render failures), not just
-      // the top-level message, so the results page shows the real cause.
       job.errors = [...new Set([...(job.errors || []), ...progress.errors])];
-      setStatus("error", progress.percent);
+      await setStatus("error", progress.percent);
       log(`Error: ${msg}`);
     }
   } finally {
     // Job has reached a terminal state — release the cancel flag and drop the live
     // progress snapshot after a short grace period so reconnecting clients can read
     // the final state once before it's cleared.
-    clearCancel(job.id);
-    setTimeout(() => clearLiveProgress(job.id), 30_000);
+    repos.clipJobs.clearCancel(job.id);
+    setTimeout(() => repos.clipJobs.clearProgress(job.id).catch((err) => {
+      console.error("[clip-pipeline] Failed to clear progress for job", job.id, err);
+    }), 30_000);
   }
 }

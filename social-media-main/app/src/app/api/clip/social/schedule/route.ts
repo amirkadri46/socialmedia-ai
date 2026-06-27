@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { v4 as uuid } from "uuid";
-import { readSettings } from "@/lib/settings";
-import { getClip, readAccounts, readPosts, writePosts, updateClip } from "@/lib/clip/store";
+import { repos } from "@/lib/db";
 import { publishReel } from "@/lib/clip/social/instagram";
 import type { ScheduledPost } from "@/lib/types";
 
@@ -15,17 +14,22 @@ interface ScheduleRequest {
 }
 
 export async function POST(request: Request) {
-  const settings = readSettings();
+  const settings = await repos.settings.get();
   const reqUrl = new URL(request.url);
   const appBase = (process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || reqUrl.origin).replace(/\/$/, "");
-  const body = (await request.json()) as ScheduleRequest;
-  const clip = getClip(body.clipId);
+  let body: ScheduleRequest;
+  try {
+    body = (await request.json()) as ScheduleRequest;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON in request body." }, { status: 400 });
+  }
+  const clip = await repos.clips.get(body.clipId);
   if (!clip) return NextResponse.json({ error: "Clip not found" }, { status: 404 });
   if (!body.accountIds?.length) {
     return NextResponse.json({ error: "Select at least one account." }, { status: 400 });
   }
 
-  const accounts = readAccounts();
+  const accounts = await repos.socialAccounts.getAll();
   const publishNow = !body.scheduledFor;
 
   // Build a post per account, publishing the "now" ones concurrently so N accounts don't
@@ -66,11 +70,13 @@ export async function POST(request: Request) {
               publicUrl,
               body.caption
             );
+            console.log(`[publish] Clip ${clip.id} published to @${account.username} — media ${mediaId}`);
             post.status = "published";
             post.error = undefined;
             post.caption = `${body.caption}`.trim();
             void mediaId;
           } catch (err) {
+            console.error(`[publish] Failed to publish clip ${clip.id} to account ${accountId}:`, err instanceof Error ? err.message : err);
             post.status = "failed";
             post.error = err instanceof Error ? err.message : "Publish failed.";
           }
@@ -86,13 +92,11 @@ export async function POST(request: Request) {
     })
   );
 
-  // Persist all new posts in a single atomic write (avoids the per-account read-modify-write
-  // race), and update the clip caption once if anything published.
-  const posts = readPosts();
-  posts.push(...results.map((r) => r.post));
-  writePosts(posts);
+  // Persist all new posts serially — concurrent upserts on the file backend would race
+  // on the same JSON file (both read before either writes, second rename drops the first).
+  for (const r of results) await repos.scheduledPosts.upsert(r.post);
   if (results.some((r) => r.post.status === "published")) {
-    updateClip(clip.id, { caption: body.caption });
+    await repos.clips.update(clip.id, { caption: body.caption });
   }
 
   return NextResponse.json({ ok: true, results });

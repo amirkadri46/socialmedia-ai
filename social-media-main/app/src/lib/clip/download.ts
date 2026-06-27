@@ -23,7 +23,7 @@ function jobDir(jobId: string): string {
  * fallback. Without one of these, YouTube blocks datacenter IPs with the
  * "Sign in to confirm you're not a bot" error.
  */
-function cookieArgs(cookiesBrowser?: string, cookiesText?: string): string[] {
+export function cookieArgs(cookiesBrowser?: string, cookiesText?: string): string[] {
   // Env var wins on hosted deploys (Railway): it survives redeploys, unlike the
   // settings.json textarea which lives on an ephemeral filesystem.
   const text = (cookiesText && cookiesText.trim()) ? cookiesText : process.env.YTDLP_COOKIES;
@@ -62,7 +62,14 @@ export async function inspect(url: string, cookiesBrowser?: string, cookiesText?
     ...cookiesArgs,
     url,
   ]);
-  const json = JSON.parse(stdout);
+  let json: Record<string, unknown>;
+  try {
+    json = JSON.parse(stdout);
+  } catch {
+    throw new Error(
+      `yt-dlp returned invalid JSON for "${url}". Output: ${stdout.slice(0, 200)}`
+    );
+  }
   return {
     title: json.title ?? "Untitled video",
     durationSec: Math.round(json.duration ?? 0),

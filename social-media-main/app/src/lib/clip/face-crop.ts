@@ -3,6 +3,8 @@ import path from "path";
 import os from "os";
 import OpenAI from "openai";
 import { ffmpeg, probe } from "./ffmpeg";
+import { persistentSourcePath } from "./store";
+import { aspectRatioValue } from "./layout-geom";
 import type { CropRect } from "../types";
 
 function openaiClient(): OpenAI {
@@ -105,9 +107,10 @@ export function buildCropRect(
   srcH: number,
   aspect: string
 ): CropRect {
-  const tAR = aspect === "1:1" ? 1 : aspect === "16:9" ? 16 / 9 : 9 / 16;
-  // Place the face at ~28% from the top (more headroom on wide crops).
-  return buildCropRectForAspect(cx, cy, srcW, srcH, tAR, aspect === "16:9" ? 0.4 : 0.28);
+  // aspectRatioValue covers all crop modal options (9:16, 1:1, 16:9, 4:3, 4:5, 9:8).
+  const tAR = aspectRatioValue(aspect);
+  const headroom = tAR >= 1 ? 0.4 : 0.28; // wider crops need more headroom
+  return buildCropRectForAspect(cx, cy, srcW, srcH, tAR, headroom);
 }
 
 /**
@@ -121,7 +124,11 @@ export async function detectFaceCrop(
   aspect: string,
   samples = 3
 ): Promise<CropRect> {
-  const srcPath = path.join(os.tmpdir(), "social-clipper", jobId, "source.mp4");
+  // Resolve source: persistent copy first (survives server restarts), then tmpdir.
+  const persistent = persistentSourcePath(jobId);
+  const srcPath = existsSync(persistent)
+    ? persistent
+    : path.join(os.tmpdir(), "social-clipper", jobId, "source.mp4");
   if (!existsSync(srcPath)) {
     throw new Error(
       "Source video is not available — re-run the clipping job to enable face detection."

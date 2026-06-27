@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
 import { v4 as uuid } from "uuid";
-import {
-  readCaptionPromptTemplates,
-  upsertCaptionPromptTemplate,
-  deleteCaptionPromptTemplate,
-  getCaptionPromptTemplate,
-} from "@/lib/clip/store";
+import { repos } from "@/lib/db";
 import type { CaptionPromptTemplate } from "@/lib/types";
 
 // Reusable per-creator caption context templates. Persisted independent of any project,
@@ -23,7 +18,7 @@ interface TemplateBody {
 }
 
 export async function GET() {
-  return NextResponse.json(readCaptionPromptTemplates());
+  return NextResponse.json(await repos.captionPromptTemplates.getAll());
 }
 
 export async function POST(request: Request) {
@@ -44,14 +39,14 @@ export async function POST(request: Request) {
     createdAt: now,
     updatedAt: now,
   };
-  upsertCaptionPromptTemplate(template);
+  await repos.captionPromptTemplates.upsert(template);
   return NextResponse.json(template);
 }
 
 export async function PATCH(request: Request) {
   const body = (await request.json()) as TemplateBody;
   if (!body.id) return NextResponse.json({ error: "Template id is required." }, { status: 400 });
-  const existing = getCaptionPromptTemplate(body.id);
+  const existing = await repos.captionPromptTemplates.get(body.id);
   if (!existing) return NextResponse.json({ error: "Template not found." }, { status: 404 });
 
   const updated: CaptionPromptTemplate = {
@@ -65,13 +60,13 @@ export async function PATCH(request: Request) {
     includeHashtags: body.includeHashtags ?? existing.includeHashtags,
     updatedAt: new Date().toISOString(),
   };
-  upsertCaptionPromptTemplate(updated);
+  await repos.captionPromptTemplates.upsert(updated);
   return NextResponse.json(updated);
 }
 
 export async function DELETE(request: Request) {
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Template id is required." }, { status: 400 });
-  deleteCaptionPromptTemplate(id);
+  await repos.captionPromptTemplates.delete(id);
   return NextResponse.json({ ok: true });
 }

@@ -1,17 +1,34 @@
 import { scrapeVideoByUrl } from "@/lib/apify";
 import { uploadVideo, analyzeVideo } from "@/lib/gemini";
 import { generateNewConcepts } from "@/lib/claude";
-import { readConfigs, readVideos, writeVideos } from "@/lib/csv";
+import { repos } from "@/lib/db";
 import { v4 as uuid } from "uuid";
 
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
-  const { url, configName, creatorOverride } = await request.json() as {
-    url: string;
-    configName: string;
-    creatorOverride?: string;
-  };
+  let url: string;
+  let configName: string;
+  let creatorOverride: string | undefined;
+
+  try {
+    const body = await request.json();
+    url = body.url;
+    configName = body.configName;
+    creatorOverride = body.creatorOverride;
+    
+    if (!url || !configName) {
+      return new Response(JSON.stringify({ error: "Missing url or configName" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  } catch (error) {
+    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -28,7 +45,7 @@ export async function POST(request: Request) {
       };
 
       try {
-        const configs = readConfigs();
+        const configs = await repos.configs.getAll();
         const config = configs.find((c) => c.configName === configName);
         if (!config) throw new Error(`Config "${configName}" not found`);
 
@@ -81,8 +98,7 @@ export async function POST(request: Request) {
           starred: false,
         };
 
-        const existing = readVideos();
-        writeVideos([...existing, video]);
+        await repos.videos.append(video);
 
         addLog(`Done — saved under @${creator}`);
         emit("completed", "Done", { video });

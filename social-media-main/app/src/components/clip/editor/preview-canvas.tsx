@@ -33,6 +33,7 @@ export function PreviewCanvas({
   onOpenCrop,
   selectedTextId,
   onSelectText,
+  sourceVideoUrl,
 }: {
   jobId: string;
   edit: ClipEdit;
@@ -43,6 +44,7 @@ export function PreviewCanvas({
   onOpenCrop?: () => void;
   selectedTextId?: string | null;
   onSelectText?: (id: string | null) => void;
+  sourceVideoUrl?: string | null;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const windowT = editedToWindow(edit, playhead);
@@ -413,7 +415,7 @@ export function PreviewCanvas({
         >
           <video
             ref={videoRef}
-            src={`/api/clip/${jobId}/source`}
+            src={sourceVideoUrl ?? `/api/clip/${jobId}/source`}
             playsInline
             muted={false}
             preload="auto"

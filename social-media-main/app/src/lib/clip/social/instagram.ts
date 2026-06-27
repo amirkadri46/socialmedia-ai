@@ -1,5 +1,3 @@
-import { readSettings } from "../../settings";
-
 // Instagram Login flow — no Facebook Page required.
 // Uses api.instagram.com for OAuth + graph.instagram.com for API calls.
 
@@ -15,8 +13,7 @@ export function getRedirectUri(origin: string): string {
 }
 
 /** Build the Instagram OAuth consent URL. */
-export function buildAuthUrl(origin: string, state: string): string {
-  const { metaAppId } = readSettings();
+export function buildAuthUrl(origin: string, state: string, metaAppId: string): string {
   if (!metaAppId) throw new Error("Instagram App ID is not set — add it in Settings before connecting.");
   const params = new URLSearchParams({
     client_id: metaAppId,
@@ -30,8 +27,12 @@ export function buildAuthUrl(origin: string, state: string): string {
 }
 
 /** Exchange an OAuth code for a long-lived access token. */
-export async function exchangeCode(origin: string, code: string): Promise<string> {
-  const { metaAppId, metaAppSecret } = readSettings();
+export async function exchangeCode(
+  origin: string,
+  code: string,
+  metaAppId: string,
+  metaAppSecret: string
+): Promise<string> {
   if (!metaAppId || !metaAppSecret) throw new Error("Instagram App ID/Secret not configured.");
 
   // Step 1: short-lived token
@@ -133,16 +134,28 @@ export async function publishReel(
     }),
   });
   if (!createRes.ok) throw new Error(`Container create failed: ${(await createRes.text()).slice(0, 200)}`);
-  const { id: containerId } = await createRes.json();
+  const createData = await createRes.json();
+  const containerId: string | undefined = createData?.id;
+  if (!containerId) {
+    throw new Error(`Instagram did not return a container ID. Response: ${JSON.stringify(createData).slice(0, 200)}`);
+  }
 
   // Poll container status (video transcode can take a while)
   let finished = false;
   for (let i = 0; i < 60; i++) {
     await new Promise((r) => setTimeout(r, 3000));
-    const statusRes = await fetch(
-      `${IG_GRAPH}/${containerId}?fields=status_code&access_token=${accessToken}`
-    );
-    const status = await statusRes.json();
+    let status: { status_code?: string } = {};
+    try {
+      const statusRes = await fetch(
+        `${IG_GRAPH}/${containerId}?fields=status_code&access_token=${accessToken}`
+      );
+      if (statusRes.ok) {
+        status = await statusRes.json();
+      }
+      // Non-ok status response (network/auth hiccup) — continue polling rather than failing hard.
+    } catch {
+      // Transient network error during polling — continue to next iteration.
+    }
     if (status.status_code === "FINISHED") { finished = true; break; }
     if (status.status_code === "ERROR") throw new Error("Media container processing errored.");
   }
@@ -158,6 +171,10 @@ export async function publishReel(
     body: JSON.stringify({ creation_id: containerId, access_token: accessToken }),
   });
   if (!pubRes.ok) throw new Error(`Publish failed: ${(await pubRes.text()).slice(0, 200)}`);
-  const { id: mediaId } = await pubRes.json();
+  const pubData = await pubRes.json();
+  const mediaId: string | undefined = pubData?.id;
+  if (!mediaId) {
+    throw new Error(`Instagram did not return a media ID after publishing. Response: ${JSON.stringify(pubData).slice(0, 200)}`);
+  }
   return { mediaId };
 }

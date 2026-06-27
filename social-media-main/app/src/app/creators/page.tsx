@@ -41,7 +41,13 @@ export default function CreatorsPage() {
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
 
   const loadCreators = () => {
-    fetch("/api/creators").then((r) => r.json()).then(setCreators);
+    fetch("/api/creators")
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to load creators");
+        return r.json();
+      })
+      .then(setCreators)
+      .catch((err) => console.error(err));
   };
 
   useEffect(() => { loadCreators(); }, []);

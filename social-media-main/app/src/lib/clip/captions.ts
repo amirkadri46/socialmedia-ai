@@ -130,7 +130,7 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 ${styleDefs.join("\n")}
 
 [Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, Effect, Text`;
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
 
   const lines: string[] = [];
 
@@ -190,14 +190,30 @@ export function buildAssFromConfig(
 
   const scale = canvasH / 1920;
   const fontSize = Math.round(config.font.sizePx * scale);
-  const base = rgb(config.font.color);
-  const highlight = rgb(config.effects.highlightColor);
+  let base = rgb(config.font.color);
+  let highlight = rgb(config.effects.highlightColor);
   const stroke = rgb(config.font.strokeColor);
+  let outline = config.font.strokeWidthPx > 0 ? Math.max(1, Math.round(config.font.strokeWidthPx * scale)) : 0;
+  let shadow = config.font.shadow ? 2 : 0;
+  let isUppercase = config.font.uppercase;
+
+  if (config.preset === "Hormozi Style") {
+    isUppercase = true;
+    outline = Math.max(1, Math.round(4 * scale)); // Outline: 4
+    shadow = 2; // Shadow: 2
+    highlight = rgb("#A3E635"); // Vibrant neon yellow/green
+  }
+  
+  const isColorSwap = config.preset === "Ali Abdal Style" || config.preset === "Bubble Style";
+  if (isColorSwap) {
+    // Render the active word using a highly contrasting color swap tag
+    highlight = rgb("#000000"); // Absolute black for the active word
+    base = rgb("#A0A0A0"); // Muted inactive color
+  }
+
   const box = config.effects.wordBgColor || config.effects.animation === "box";
   const back = config.effects.wordBgColor ? rgb(config.effects.wordBgColor) : rgb("000000", "80");
   const borderStyle = box ? 3 : 1;
-  const outline = config.font.strokeWidthPx > 0 ? Math.max(1, Math.round(config.font.strokeWidthPx * scale)) : 0;
-  const shadow = config.font.shadow ? 2 : 0;
   const bold = -1;
   const alignment =
     config.effects.position === "top" ? 8 : config.effects.position === "middle" ? 5 : 2;
@@ -218,9 +234,9 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 ${styleLine}
 
 [Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, Effect, Text`;
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
 
-  // Drag-to-reposition: \pos overrides alignment-based placement.
+  // Drag-to-reposition: \\pos overrides alignment-based placement.
   const posTag = config.offset
     ? `{\\pos(${Math.round(config.offset.x * canvasW)},${Math.round(config.offset.y * canvasH)})}`
     : "";
@@ -235,9 +251,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, Effect, Text`;
     group.forEach((active, idx) => {
       const text = group
         .map((w, j) => {
-          let raw = w.text;
+          let raw = w.text.replace(/,+$/, "");
           if (j === 0) raw = raw.replace(/^[\s,.;:!?'"-]+/, "");
-          const t = config.font.uppercase ? raw.toUpperCase() : raw;
+          const t = isUppercase ? raw.toUpperCase() : raw;
           if (!t) return "";
           // Per-word highlight color (3A) wins over the karaoke base/highlight,
           // and persists whether or not this is the active spoken word.

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { chat } from "@/lib/clip/llm";
-import { getClip, getCaptionPromptTemplate } from "@/lib/clip/store";
+import { repos } from "@/lib/db";
 
 export const maxDuration = 60;
 
@@ -22,10 +22,10 @@ interface CaptionRequest {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as CaptionRequest;
-    const clip = getClip(body.clipId);
+    const clip = await repos.clips.get(body.clipId);
     if (!clip) return NextResponse.json({ error: "Clip not found" }, { status: 404 });
 
-    const template = body.templateId ? getCaptionPromptTemplate(body.templateId) : undefined;
+    const template = body.templateId ? await repos.captionPromptTemplates.get(body.templateId) : undefined;
 
     const platform = body.platform || "Instagram";
     const directives: string[] = [];

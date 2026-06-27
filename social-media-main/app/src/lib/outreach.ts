@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "fs";
 import path from "path";
 import { v4 as uuid } from "uuid";
 import { stringify } from "csv-stringify/sync";
@@ -11,6 +11,17 @@ const CSV_DIR = path.join(DATA_DIR, "csv");
 
 function ensureDataDir() {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function writeFileAtomic(p: string, data: string): void {
+  const tmp = `${p}.tmp-${process.pid}-${Date.now()}`;
+  writeFileSync(tmp, data, "utf-8");
+  try {
+    renameSync(tmp, p);
+  } catch (err) {
+    try { unlinkSync(tmp); } catch { /* best-effort */ }
+    throw err;
+  }
 }
 
 // ── Prospect Lists ────────────────────────────────────────────────────────────
@@ -26,7 +37,7 @@ export function readProspectLists(): ProspectList[] {
 
 export function writeProspectLists(lists: ProspectList[]): void {
   ensureDataDir();
-  writeFileSync(LISTS_PATH, JSON.stringify(lists, null, 2), "utf-8");
+  writeFileAtomic(LISTS_PATH, JSON.stringify(lists, null, 2));
 }
 
 export function writeProspectListAsCsv(list: ProspectList): void {
@@ -130,7 +141,7 @@ export function readTemplates(): OfferTemplate[] {
 
 export function writeTemplates(templates: OfferTemplate[]): void {
   ensureDataDir();
-  writeFileSync(TEMPLATES_PATH, JSON.stringify(templates, null, 2), "utf-8");
+  writeFileAtomic(TEMPLATES_PATH, JSON.stringify(templates, null, 2));
 }
 
 export function getActiveTemplate(): OfferTemplate | undefined {

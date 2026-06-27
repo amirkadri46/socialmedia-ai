@@ -1,5 +1,5 @@
 import { v4 as uuid } from "uuid";
-import { readConfigs, readCreators, readVideos, writeVideos } from "./csv";
+import { repos } from "./db";
 import { scrapeReels } from "./apify";
 import { uploadVideo, analyzeVideo } from "./gemini";
 import { generateNewConcepts } from "./claude";
@@ -76,14 +76,14 @@ export async function runPipeline(
 
   try {
     // Load config
-    const configs = readConfigs();
+    const configs = await repos.configs.getAll();
     const config = configs.find((c) => c.configName === params.configName);
     if (!config) throw new Error(`Config "${params.configName}" not found`);
 
     log(`Loaded config: ${config.configName}`);
 
     // Load creators
-    const allCreators = readCreators();
+    const allCreators = await repos.creators.getAll();
     const creators = allCreators.filter((c) => c.category === config.creatorsCategory);
     if (creators.length === 0) throw new Error(`No creators found for category "${config.creatorsCategory}"`);
 
@@ -231,11 +231,8 @@ export async function runPipeline(
       }
     });
 
-    // Write all new videos at once
-    if (newVideos.length > 0) {
-      const existing = readVideos();
-      writeVideos([...existing, ...newVideos]);
-    }
+    // Write all new videos in a single batch (one read + one write for the file backend).
+    await repos.videos.appendBatch(newVideos);
 
     progress.phase = "done";
     progress.status = "completed";

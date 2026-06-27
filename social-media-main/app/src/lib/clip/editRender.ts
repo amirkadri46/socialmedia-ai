@@ -4,7 +4,8 @@ import os from "os";
 import { ffmpeg, probe } from "./ffmpeg";
 import { aspectDims } from "./render";
 import { buildAssFromConfig } from "./captions";
-import { clipMediaDir, updateClip } from "./store";
+import { clipMediaDir, persistentSourcePath } from "./store";
+import { repos } from "../db";
 import { allTransitions, keptSegments, editedDuration, windowToEdited, layoutAt } from "./edit-timeline";
 import { paneCount, resolveFrame, splitSlots } from "./layout-geom";
 import type { ClipEdit, CropRect, Word, TextOverlay, LayoutSegment, TransitionMarker, BlurBackground } from "../types";
@@ -98,7 +99,7 @@ function framePieceFilters(
   const needsBlur = !!blurBg?.enabled && (fr.w < 0.999 || fr.h < 0.999);
   if (needsBlur) {
     const sigma = Math.max(0.5, (blurBg!.blur / 100) * 30).toFixed(2);
-    const bright = (blurBg!.brightness - 1).toFixed(2); // eq brightness is additive (-1..1)
+    const bright = Math.min(1, Math.max(-1, blurBg!.brightness - 1)).toFixed(2); // eq brightness is additive (-1..1)
     const opacity = Math.min(1, Math.max(0, blurBg!.opacity)).toFixed(2);
     const bw = even(w * Math.max(1, blurBg!.scale));
     const bh = even(h * Math.max(1, blurBg!.scale));
@@ -121,6 +122,8 @@ function framePieceFilters(
 }
 
 function sourcePath(jobId: string): string {
+  const persistent = persistentSourcePath(jobId);
+  if (existsSync(persistent)) return persistent;
   return path.join(os.tmpdir(), "social-clipper", jobId, "source.mp4");
 }
 
@@ -155,7 +158,7 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 Style: Ov,Arial,48,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,3,2,0,5,40,40,40,1
 
 [Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, Effect, Text`;
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;
   const lines = overlays.map((o) => {
     const size = Math.round((o.style.sizePx * h) / 1920);
     const text = o.text.replace(/\n/g, " ").replace(/[{}]/g, "");
@@ -404,7 +407,7 @@ export async function exportEdit(
   }
 
   // Point the Clip at the edited file so results/download/schedule use it (keep original too).
-  updateClip(edit.clipId, { filePath: final });
+  await repos.clips.update(edit.clipId, { filePath: final });
   onProgress({ percent: 100, log: "Done", done: `/api/clip/download/${edit.clipId}` });
   return final;
 }

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, renameSync } from "fs";
 import path from "path";
 import { DEFAULT_SHORTCUTS, type EditorShortcuts } from "./clip/shortcuts";
 
@@ -74,7 +74,18 @@ export function readSettings(): AppSettings {
   }
 }
 
+function writeFileAtomic(p: string, data: string): void {
+  const tmp = `${p}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  writeFileSync(tmp, data, "utf-8");
+  try {
+    renameSync(tmp, p);
+  } catch (err) {
+    try { unlinkSync(tmp); } catch { /* best-effort cleanup */ }
+    throw err;
+  }
+}
+
 export function writeSettings(settings: AppSettings) {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), "utf-8");
+  writeFileAtomic(SETTINGS_PATH, JSON.stringify(settings, null, 2));
 }

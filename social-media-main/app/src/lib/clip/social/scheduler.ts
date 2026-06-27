@@ -1,5 +1,4 @@
-import { readSettings } from "../../settings";
-import { readPosts, writePosts, readAccounts, getClip, updateClip } from "../store";
+import { repos } from "../../db";
 import { publishReel } from "./instagram";
 
 /**
@@ -17,10 +16,11 @@ export async function processDuePosts(): Promise<{ processed: number; published:
   if (running) return { processed: 0, published: 0 };
   running = true;
   try {
-    const settings = readSettings();
+    const settings = await repos.settings.get();
     const appBase = (process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
     const now = Date.now();
-    const due = readPosts().filter(
+    const allPosts = await repos.scheduledPosts.getAll();
+    const due = allPosts.filter(
       (p) => p.status === "scheduled" && p.scheduledFor && Date.parse(p.scheduledFor) <= now
     );
     if (due.length === 0) return { processed: 0, published: 0 };
@@ -31,11 +31,11 @@ export async function processDuePosts(): Promise<{ processed: number; published:
       return { processed: 0, published: 0 };
     }
 
-    const accounts = readAccounts();
+    const accounts = await repos.socialAccounts.getAll();
     let published = 0;
     for (const post of due) {
       const account = accounts.find((a) => a.id === post.accountId);
-      const clip = getClip(post.clipId);
+      const clip = await repos.clips.get(post.clipId);
       try {
         if (!clip) throw new Error("Clip not found.");
         if (!account) throw new Error("Account not found — it may have been disconnected.");
@@ -43,22 +43,22 @@ export async function processDuePosts(): Promise<{ processed: number; published:
         await publishReel(account.igUserId!, account.accessToken, publicUrl, post.caption);
         post.status = "published";
         post.error = undefined;
-        updateClip(clip.id, { caption: post.caption });
+        await repos.clips.update(clip.id, { caption: post.caption });
         published++;
       } catch (err) {
         post.status = "failed";
         post.error = err instanceof Error ? err.message : "Publish failed.";
       }
+      // Persist status separately — if upsert fails after a successful publish we log and
+      // continue rather than re-throwing (which would leave status="scheduled" and risk a
+      // double-publish on the next scheduler tick).
+      try {
+        await repos.scheduledPosts.upsert(post);
+      } catch (upsertErr) {
+        console.error("[scheduler] Failed to persist post status after publish attempt:", upsertErr);
+      }
     }
 
-    // Merge the updated posts back into the latest on-disk list (other writes may have
-    // happened while we were awaiting the network), then persist atomically.
-    const latest = readPosts();
-    for (const updated of due) {
-      const idx = latest.findIndex((p) => p.id === updated.id);
-      if (idx >= 0) latest[idx] = updated;
-    }
-    writePosts(latest);
     return { processed: due.length, published };
   } finally {
     running = false;

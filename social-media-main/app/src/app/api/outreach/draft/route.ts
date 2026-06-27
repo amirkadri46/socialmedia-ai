@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { readSettings } from "@/lib/settings";
+import { repos } from "@/lib/db";
 import { buildLlmClient, parseJsonResponse } from "@/lib/llm-client";
-import { readProspectLists, writeProspectLists, getActiveTemplate } from "@/lib/outreach";
 import type { Prospect, OfferTemplate } from "@/lib/types";
 
 export const maxDuration = 120;
@@ -135,9 +134,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No prospects provided" }, { status: 400 });
   }
 
-  const settings = readSettings();
+  const settings = await repos.settings.get();
   const charLimit = settings.linkedinCharLimit ?? 200;
-  const template = getActiveTemplate();
+  const template = await repos.offerTemplates.getActive();
   if (!template) {
     return NextResponse.json(
       { error: "No active offer template — go to Outreach › Templates to set one up." },
@@ -165,25 +164,21 @@ export async function POST(req: Request) {
     results.push(...batchResults);
   }
 
-  // Persist results back to the list file
+  // Persist results back to the list
   if (listId) {
-    const lists = readProspectLists();
-    const list = lists.find((l) => l.id === listId);
-    if (list) {
-      for (const result of results) {
-        const prospect = list.prospects.find((p) => p.id === result.id);
-        if (prospect) {
-          if (result.error) {
-            prospect.draftStatus = "error";
-          } else {
-            prospect.linkedinMessage = result.linkedinMessage;
-            prospect.emailMessage = result.emailMessage;
-            prospect.draftStatus = "done";
-            prospect.lastDraftedAt = new Date().toISOString();
-          }
-        }
-      }
-      writeProspectLists(lists);
+    for (const result of results) {
+      const p = prospects.find((pr) => pr.id === result.id);
+      if (!p) continue;
+      const updated: Prospect = result.error
+        ? { ...p, draftStatus: "error" }
+        : {
+            ...p,
+            linkedinMessage: result.linkedinMessage,
+            emailMessage: result.emailMessage,
+            draftStatus: "done",
+            lastDraftedAt: new Date().toISOString(),
+          };
+      await repos.prospects.upsertProspect(listId, updated);
     }
   }
 

@@ -68,7 +68,16 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
   const [autoframing, setAutoframing] = useState(false);
   const [autoframeError, setAutoframeError] = useState<string | null>(null);
   const [toolMsg, setToolMsg] = useState<string | null>(null);
+  const toolMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exportAbortController = useRef<AbortController | null>(null);
   const raf = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (toolMsgTimer.current) clearTimeout(toolMsgTimer.current);
+      if (exportAbortController.current) exportAbortController.current.abort();
+    };
+  }, []);
 
   const edit = ed.edit;
   const duration = edit ? editedDuration(edit) : 0;
@@ -84,17 +93,19 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
 
   // Seek: paused reposition of both playhead and the underlying video.
   const seek = useCallback(
-    (t: number) => {
+    (t: number | ((prev: number) => number)) => {
       if (!edit) return;
-      const clamped = Math.min(duration, Math.max(0, t));
-      setPlayhead(clamped);
-      if (videoRef.current) videoRef.current.currentTime = editedToSource(edit, clamped);
+      setPlayhead((prev) => {
+        const target = typeof t === "function" ? t(prev) : t;
+        const clamped = Math.min(duration, Math.max(0, target));
+        if (videoRef.current) videoRef.current.currentTime = editedToSource(edit, clamped);
+        return clamped;
+      });
     },
     [edit, duration]
   );
 
-  // Step exactly one source frame forward/backward.
-  const stepFrame = useCallback((dir: 1 | -1) => seek(playhead + dir * frameStep), [seek, playhead, frameStep]);
+  const stepFrame = useCallback((dir: 1 | -1) => seek((prev) => prev + dir * frameStep), [seek, frameStep]);
 
   // ── Timeline toolbar actions (also bound to shortcuts) ──────────────────────────
   const splitAtPlayhead = useCallback(() => {
@@ -105,7 +116,8 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
     );
     if (!canSplit) {
       setToolMsg("Playhead is at an existing cut");
-      setTimeout(() => setToolMsg(null), 2000);
+      if (toolMsgTimer.current) clearTimeout(toolMsgTimer.current);
+      toolMsgTimer.current = setTimeout(() => setToolMsg(null), 2000);
       return;
     }
     ed.update((d) => {
@@ -250,9 +262,15 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
 
   // Export via SSE.
   async function runExport() {
+    if (exportAbortController.current) exportAbortController.current.abort();
+    const abortController = new AbortController();
+    exportAbortController.current = abortController;
     setExporting({ pct: 0, log: "Starting export…" });
     try {
-      const res = await fetch(`/api/clip/${jobId}/${clipId}/export`, { method: "POST" });
+      const res = await fetch(`/api/clip/${jobId}/${clipId}/export`, { 
+        method: "POST",
+        signal: abortController.signal
+      });
       const reader = res.body?.getReader();
       if (!reader) throw new Error("no stream");
       const dec = new TextDecoder();
@@ -265,12 +283,17 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
         buf = lines.pop() || "";
         for (const line of lines) {
           if (line.startsWith("data: ")) {
-            const d = JSON.parse(line.slice(6));
-            setExporting({ pct: d.percent ?? 0, log: d.log ?? "", done: d.done });
+            try {
+              const d = JSON.parse(line.slice(6));
+              setExporting({ pct: d.percent ?? 0, log: d.log ?? "", done: d.done });
+            } catch {
+              // Malformed SSE frame — skip without crashing the export UI.
+            }
           }
         }
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (e.name === "AbortError") return;
       setExporting({ pct: 0, log: e instanceof Error ? e.message : "Export failed" });
     }
   }
@@ -328,6 +351,11 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
 
   return (
     <div className="-mx-6 -my-8 flex h-[calc(100vh-3.5rem)] flex-col">
+      {!ed.sourceAvailable && (
+        <div className="flex items-center gap-2 bg-yellow-500/10 px-4 py-1.5 text-xs text-yellow-600 dark:text-yellow-400 border-b border-yellow-500/20">
+          <span>⚠ Source video unavailable — previewing from exported clip. Seek may be limited.</span>
+        </div>
+      )}
       {/* Top bar */}
       <div className="flex items-center gap-3 border-b px-4 py-2.5">
         <Button asChild variant="ghost" size="icon-sm">
@@ -417,6 +445,7 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
               onOpenCrop={() => setCropOpen(true)}
               selectedTextId={selectedTextId}
               onSelectText={(id) => setSelectedItem(id ? { kind: "text", id } : null)}
+              sourceVideoUrl={ed.sourceVideoUrl}
             />
           </div>
         </div>
@@ -525,6 +554,7 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
           jobId={jobId}
           clipId={clipId}
           sourceTime={editedToSource(edit, playhead)}
+          sourceVideoUrl={ed.sourceVideoUrl}
           aspect={edit.aspectRatio}
           crop={activeSeg?.crop}
           cropAspect={activeSeg?.cropAspect}
