@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -39,7 +40,7 @@ function formatScheduled(iso: string) {
   });
 }
 
-export default function QueuePage() {
+function QueuePageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -235,5 +236,13 @@ export default function QueuePage() {
         </>
       )}
     </div>
+  );
+}
+
+export default function QueuePage() {
+  return (
+    <Suspense>
+      <QueuePageInner />
+    </Suspense>
   );
 }

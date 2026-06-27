@@ -70,12 +70,13 @@ export async function inspect(url: string, cookiesBrowser?: string, cookiesText?
       `yt-dlp returned invalid JSON for "${url}". Output: ${stdout.slice(0, 200)}`
     );
   }
+  const meta = json as { title?: string; duration?: number; thumbnail?: string; width?: number; height?: number };
   return {
-    title: json.title ?? "Untitled video",
-    durationSec: Math.round(json.duration ?? 0),
-    thumbnail: json.thumbnail ?? "",
-    width: json.width ?? 0,
-    height: json.height ?? 0,
+    title: meta.title ?? "Untitled video",
+    durationSec: Math.round(meta.duration ?? 0),
+    thumbnail: meta.thumbnail ?? "",
+    width: meta.width ?? 0,
+    height: meta.height ?? 0,
   };
 }
 
