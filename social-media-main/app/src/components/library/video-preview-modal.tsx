@@ -23,11 +23,12 @@ export function VideoPreviewModal({ videoId, onClose, onDeleted }: VideoPreviewM
   const [detail, setDetail] = useState<VideoDetail | null>(null);
   const [caption, setCaption] = useState<string>("");
   const [captionLoading, setCaptionLoading] = useState(false);
+  const [captionError, setCaptionError] = useState<string>("");
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
-    if (!videoId) { setDetail(null); setCaption(""); return; }
+    if (!videoId) { setDetail(null); setCaption(""); setCaptionError(""); return; }
     fetch(`/api/library/${videoId}`)
       .then((r) => r.json())
       .then((d: VideoDetail) => {
@@ -39,10 +40,14 @@ export function VideoPreviewModal({ videoId, onClose, onDeleted }: VideoPreviewM
   const generateCaption = async () => {
     if (!videoId) return;
     setCaptionLoading(true);
+    setCaptionError("");
     try {
       const res = await fetch(`/api/library/${videoId}/caption`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
       const data = await res.json();
+      if (!res.ok) { setCaptionError(data.error ?? "Caption generation failed"); return; }
       setCaption(data.caption ?? "");
+    } catch {
+      setCaptionError("Network error — check console");
     } finally {
       setCaptionLoading(false);
     }
@@ -68,12 +73,13 @@ export function VideoPreviewModal({ videoId, onClose, onDeleted }: VideoPreviewM
           <div className="flex flex-col sm:flex-row">
             {/* Left — video */}
             <div className="sm:w-[60%] bg-black flex flex-col">
-              <video
-                controls
-                src={detail.video_url}
-                className="w-full"
-                style={{ maxHeight: 480 }}
-              />
+              {detail.video_url ? (
+                <video controls src={detail.video_url} className="w-full" style={{ maxHeight: 480 }} />
+              ) : (
+                <div className="w-full flex items-center justify-center bg-zinc-900 text-zinc-500 text-sm" style={{ minHeight: 200 }}>
+                  Video file not available
+                </div>
+              )}
               <div className="p-4 space-y-1">
                 <DialogHeader>
                   <DialogTitle className="text-base leading-snug">{detail.title}</DialogTitle>
@@ -83,15 +89,18 @@ export function VideoPreviewModal({ videoId, onClose, onDeleted }: VideoPreviewM
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  Downloaded {new Date(detail.downloaded_at).toLocaleDateString()}
-                </p>
+                {detail.downloaded_at && (
+                  <p className="text-xs text-muted-foreground">
+                    Downloaded {new Date(detail.downloaded_at).toLocaleDateString()}
+                  </p>
+                )}
               </div>
             </div>
 
             {/* Right — caption + actions */}
             <div className="sm:w-[40%] flex flex-col gap-4 p-4 border-l border-border">
               <p className="text-sm font-semibold">Caption</p>
+              {captionError && <p className="text-xs text-destructive">{captionError}</p>}
               {caption ? (
                 <>
                   <Textarea

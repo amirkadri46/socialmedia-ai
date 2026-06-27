@@ -19,14 +19,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const prompt = body.promptTemplate
     ?? `Write an engaging Instagram caption for a video titled '${video.title}' by ${video.creator ?? "Unknown"}. Include 5-10 relevant hashtags. Keep it authentic and under 150 words.`;
 
-  const { client, model } = buildLlmClient();
-  const completion = await client.chat.completions.create({
-    model,
-    messages: [{ role: "user", content: prompt }],
-  });
-  const caption = completion.choices[0]?.message?.content ?? "";
-
-  await videoCaptionRepository.upsert({ video_id: id, platform, language, caption });
-
-  return Response.json({ caption });
+  try {
+    const { client, model } = buildLlmClient();
+    const completion = await client.chat.completions.create({
+      model,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const caption = completion.choices[0]?.message?.content ?? "";
+    await videoCaptionRepository.upsert({ video_id: id, platform, language, caption });
+    return Response.json({ caption });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Caption generation failed";
+    return Response.json({ error: message }, { status: 500 });
+  }
 }
