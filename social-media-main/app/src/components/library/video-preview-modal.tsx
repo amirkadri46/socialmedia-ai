@@ -21,6 +21,7 @@ interface VideoPreviewModalProps {
 
 export function VideoPreviewModal({ videoId, onClose, onDeleted }: VideoPreviewModalProps) {
   const [detail, setDetail] = useState<VideoDetail | null>(null);
+  const [detailError, setDetailError] = useState<string>("");
   const [caption, setCaption] = useState<string>("");
   const [captionLoading, setCaptionLoading] = useState(false);
   const [captionError, setCaptionError] = useState<string>("");
@@ -28,13 +29,16 @@ export function VideoPreviewModal({ videoId, onClose, onDeleted }: VideoPreviewM
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
-    if (!videoId) { setDetail(null); setCaption(""); setCaptionError(""); return; }
+    if (!videoId) { setDetail(null); setDetailError(""); setCaption(""); setCaptionError(""); return; }
+    setDetailError("");
     fetch(`/api/library/${videoId}`)
-      .then((r) => r.json())
-      .then((d: VideoDetail) => {
+      .then(async (r) => {
+        const d = await r.json();
+        if (!r.ok) { setDetailError(d.error ?? "Failed to load video"); return; }
         setDetail(d);
         setCaption(d.captions?.[0]?.caption ?? "");
-      });
+      })
+      .catch(() => setDetailError("Network error"));
   }, [videoId]);
 
   const generateCaption = async () => {
@@ -142,6 +146,10 @@ export function VideoPreviewModal({ videoId, onClose, onDeleted }: VideoPreviewM
                 </Button>
               )}
             </div>
+          </div>
+        ) : detailError ? (
+          <div className="flex items-center justify-center h-48">
+            <p className="text-sm text-destructive">{detailError}</p>
           </div>
         ) : (
           <div className="flex items-center justify-center h-48">

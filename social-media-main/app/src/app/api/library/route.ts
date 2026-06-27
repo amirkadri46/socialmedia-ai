@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   let videos = readQueue()
     .filter((j) => j.status === "completed")
     .map((j) => ({
-      id: j.id,
+      id: j.videoLibraryId || j.id,
       title: j.title,
       creator: j.creator || null,
       platform: j.platform,
