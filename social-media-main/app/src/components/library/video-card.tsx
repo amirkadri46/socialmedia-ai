@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { Film } from "lucide-react";
 import type { VideoWithUrls } from "@/lib/services/video-library-service";
 
@@ -32,7 +33,7 @@ interface VideoCardProps {
   onPreview: (video: VideoWithUrls) => void;
 }
 
-export function VideoCard({ video, onPreview }: VideoCardProps) {
+export const VideoCard = memo(function VideoCard({ video, onPreview }: VideoCardProps) {
   const platform = PLATFORM_BADGE[video.platform ?? ""] ?? null;
   const statusClass = STATUS_BADGE[video.publish_status] ?? "bg-zinc-600";
   const statusLabel = STATUS_LABEL[video.publish_status] ?? video.publish_status;
@@ -48,6 +49,8 @@ export function VideoCard({ video, onPreview }: VideoCardProps) {
           src={video.thumbnail_url}
           alt={video.title}
           className="w-full h-full object-cover"
+          loading="lazy"
+          decoding="async"
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-zinc-800">
@@ -90,4 +93,4 @@ export function VideoCard({ video, onPreview }: VideoCardProps) {
       </div>
     </div>
   );
-}
+});

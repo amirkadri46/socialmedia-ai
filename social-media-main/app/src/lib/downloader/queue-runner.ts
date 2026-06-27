@@ -9,6 +9,8 @@ class QueueRunner {
   private liveJobs = new Map<string, DownloadJob>();
   private running = new Set<string>();
   private tickTimer: ReturnType<typeof setInterval> | null = null;
+  // Cache the on-disk snapshot so GET /api/downloader/queue doesn't re-read the file every 2 s.
+  private diskCache: DownloadJob[] | null = null;
 
   /** Call once to start the background tick. Safe to call multiple times. */
   ensureStarted() {
@@ -33,7 +35,8 @@ class QueueRunner {
     const available = settings.concurrentDownloads - this.running.size;
     if (available <= 0) return;
 
-    const waiting = this.getAllJobs().filter(
+    // Use liveJobs directly — waiting/retrying jobs are always in memory, no disk read needed.
+    const waiting = Array.from(this.liveJobs.values()).filter(
       (j) => j.status === "waiting" || j.status === "retrying"
     );
     for (const job of waiting.slice(0, available)) {
@@ -98,6 +101,7 @@ class QueueRunner {
       }
 
       upsertJob(this.getJob(job.id)!);
+      this.diskCache = null;
     } catch (err) {
       const current = this.getJob(job.id)!;
       if (current.retryCount < settings.retryCount) {
@@ -110,6 +114,7 @@ class QueueRunner {
         this.patch(job.id, { status: "failed", error: String(err) });
       }
       upsertJob(this.getJob(job.id)!);
+      this.diskCache = null;
     } finally {
       this.running.delete(job.id);
     }
@@ -123,6 +128,7 @@ class QueueRunner {
   addJobs(urls: string[], quality: DownloadJob["quality"] = "best"): DownloadJob[] {
     const settings = readDownloaderSettings();
     const existingUrls = new Set(this.getAllJobs().map((j) => j.url));
+    this.diskCache = null;
     const newJobs: DownloadJob[] = [];
 
     for (const url of urls) {

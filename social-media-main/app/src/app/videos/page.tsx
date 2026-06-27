@@ -106,15 +106,15 @@ function VideosContent() {
     setFilterCreator("all");
   }, [filterConfig]);
 
-  const uniqueCreators = [
+  const uniqueCreators = useMemo(() => [
     ...new Set(
       videos
         .filter((v) => filterConfig === "all" || v.configName === filterConfig)
         .map((v) => v.creator)
     ),
-  ].sort();
+  ].sort(), [videos, filterConfig]);
 
-  const filtered = videos
+  const filtered = useMemo(() => videos
     .filter((v) => {
       if (filterConfig !== "all" && v.configName !== filterConfig) return false;
       if (filterCreator !== "all" && v.creator !== filterCreator) return false;
@@ -129,7 +129,7 @@ function VideosContent() {
       if (sortBy === "date-posted") return (b.datePosted || "").localeCompare(a.datePosted || "");
       if (sortBy === "date-added") return (b.dateAdded || "").localeCompare(a.dateAdded || "");
       return 0;
-    });
+    }), [videos, filterConfig, filterCreator, sortBy]);
 
   // Apply custom order on top of filtered/sorted list
   const display = useMemo(() => {

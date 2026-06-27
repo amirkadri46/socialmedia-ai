@@ -39,10 +39,13 @@ export function CampaignPreviewCard({ campaignId, videoCount, accountCount, sche
       return;
     }
     setLoading(true);
-    fetch(`/api/campaigns/${campaignId}/preview`)
-      .then((r) => r.json())
-      .then(setPreview)
-      .finally(() => setLoading(false));
+    const timer = setTimeout(() => {
+      fetch(`/api/campaigns/${campaignId}/preview`)
+        .then((r) => r.json())
+        .then(setPreview)
+        .finally(() => setLoading(false));
+    }, 400);
+    return () => clearTimeout(timer);
   }, [campaignId, videoCount, accountCount]);
 
   if (!campaignId || (videoCount === 0 && accountCount === 0)) {
@@ -69,7 +72,7 @@ export function CampaignPreviewCard({ campaignId, videoCount, accountCount, sche
           <Row label="Accounts" value={accountCount} />
           <Row label="Total jobs" value={preview.totalJobs.toLocaleString()} />
           {scheduleRule && (
-            <Row label="Frequency" value={`Every ${scheduleRule.frequencyHours}h`} />
+            <Row label="Frequency" value={scheduleRule.frequencyHours < 1 ? `Every ${Math.round(scheduleRule.frequencyHours * 60)} min` : `Every ${scheduleRule.frequencyHours}h`} />
           )}
           {scheduleRule && (
             <Row label="Window" value={`${scheduleRule.windowStart} – ${scheduleRule.windowEnd}`} />

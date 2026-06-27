@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Film, Users, Calendar, BarChart2, ListChecks } from "lucide-react";
 import { ScheduleRuleEditor } from "@/components/campaigns/schedule-rule-editor";
 import { CampaignPreviewCard } from "@/components/campaigns/campaign-preview-card";
+import { AccountSelector } from "@/components/campaigns/account-selector";
 import type { Campaign, CampaignVideo, InstagramAccount, ScheduleRule } from "@/lib/db/types";
 import type { Video } from "@/lib/db/types";
 
@@ -44,6 +45,7 @@ export default function CampaignDetailPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [videos, setVideos] = useState<CampaignVideoEnriched[]>([]);
   const [accounts, setAccounts] = useState<InstagramAccount[]>([]);
+  const [addingIds, setAddingIds] = useState<string[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
@@ -64,6 +66,29 @@ export default function CampaignDetailPage() {
   };
 
   useEffect(() => { fetchAll(); }, [id]);
+
+  // AccountSelector uses social-account IDs; the POST route bridges them to pub_instagram_accounts.
+  const handleAddAccounts = async (newIds: string[]) => {
+    const toAdd = newIds.filter((x) => !addingIds.includes(x));
+    setAddingIds(newIds);
+    for (const accountId of toAdd) {
+      await fetch(`/api/campaigns/${id}/accounts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId }),
+      });
+    }
+    if (toAdd.length > 0) await fetchAll();
+  };
+
+  const removeAccount = async (pubAccountId: string) => {
+    await fetch(`/api/campaigns/${id}/accounts`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountId: pubAccountId }),
+    });
+    await fetchAll();
+  };
 
   const patchCampaign = async (data: Partial<Campaign>) => {
     setSaving(true);
@@ -216,10 +241,8 @@ export default function CampaignDetailPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="accounts" className="mt-4">
-          {accounts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No accounts in this campaign.</p>
-          ) : (
+        <TabsContent value="accounts" className="mt-4 flex flex-col gap-4">
+          {accounts.length > 0 && (
             <div className="rounded-lg border border-border divide-y divide-border">
               {accounts.map((a) => (
                 <div key={a.id} className="flex items-center gap-3 px-4 py-2.5">
@@ -229,9 +252,26 @@ export default function CampaignDetailPage() {
                   }`}>
                     {a.status}
                   </span>
+                  {canEdit && (
+                    <button
+                      onClick={() => removeAccount(a.id)}
+                      className="text-xs text-destructive hover:underline ml-2"
+                    >
+                      Remove
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
+          )}
+          {canEdit && (
+            <div className="flex flex-col gap-2">
+              <p className="text-sm font-medium">Add accounts</p>
+              <AccountSelector selectedIds={addingIds} onChange={handleAddAccounts} />
+            </div>
+          )}
+          {!canEdit && accounts.length === 0 && (
+            <p className="text-sm text-muted-foreground">No accounts in this campaign.</p>
           )}
         </TabsContent>
 

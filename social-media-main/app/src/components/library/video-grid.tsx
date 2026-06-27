@@ -18,7 +18,7 @@ export function VideoGrid({ videos, onVideoClick, loading }: VideoGridProps) {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2">
         {Array.from({ length: 10 }).map((_, i) => (
           <Skeleton key={i} className="rounded-lg" style={{ aspectRatio: "9/16" }} />
         ))}
@@ -39,7 +39,7 @@ export function VideoGrid({ videos, onVideoClick, loading }: VideoGridProps) {
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2">
       {videos.map((v) => (
         <VideoCard key={v.id} video={v} onPreview={onVideoClick} />
       ))}

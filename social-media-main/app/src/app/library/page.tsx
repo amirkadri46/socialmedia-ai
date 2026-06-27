@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,14 +16,17 @@ export default function LibraryPage() {
   const [filters, setFilters] = useState<LibraryFilters>({ platform: "", publish_status: "", search: "" });
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
 
-  const stats = {
-    total: videos.length,
-    available: videos.filter((v) => v.publish_status === "unpublished").length,
-    scheduled: videos.filter((v) => v.publish_status === "scheduled").length,
-    published: videos.filter((v) => v.publish_status === "published").length,
-  };
+  const stats = useMemo(() => {
+    let available = 0, scheduled = 0, published = 0;
+    for (const v of videos) {
+      if (v.publish_status === "unpublished") available++;
+      else if (v.publish_status === "scheduled") scheduled++;
+      else if (v.publish_status === "published") published++;
+    }
+    return { total: videos.length, available, scheduled, published };
+  }, [videos]);
 
-  const fetchVideos = () => {
+  const fetchVideos = useCallback(() => {
     setLoading(true);
     const params = new URLSearchParams();
     if (filters.platform) params.set("platform", filters.platform);
@@ -34,9 +37,9 @@ export default function LibraryPage() {
       .then((r) => r.json())
       .then(setVideos)
       .finally(() => setLoading(false));
-  };
+  }, [filters]);
 
-  useEffect(fetchVideos, [filters]);
+  useEffect(fetchVideos, [fetchVideos]);
 
   return (
     <div className="flex flex-col gap-6 p-6">
