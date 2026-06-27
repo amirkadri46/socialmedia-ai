@@ -188,7 +188,10 @@ export default function SettingsPage() {
           metaAppId, metaAppSecret, enableSocialPublish,
         }),
       });
-      if (!res.ok) throw new Error("Failed to save settings");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to save settings");
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
