@@ -72,7 +72,7 @@ export function VideoPreviewModal({ videoId, onClose, onDeleted }: VideoPreviewM
 
   return (
     <Dialog open={!!videoId} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-3xl p-0 overflow-hidden">
+      <DialogContent className="max-w-4xl p-0 overflow-hidden">
         {detail ? (
           <div className="flex flex-col sm:flex-row">
             {/* Left — video */}
