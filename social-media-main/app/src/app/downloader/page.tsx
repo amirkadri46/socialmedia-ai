@@ -37,13 +37,21 @@ export default function DownloaderPage() {
   const addUrls = async (urls: string[]) => {
     if (urls.length === 0) return;
     setLoading(true);
-    await fetch("/api/downloader/queue", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ urls }),
-    }).catch(() => {});
-    setLoading(false);
-    toast.success(`Added ${urls.length} to queue`);
+    try {
+      const res = await fetch("/api/downloader/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ urls }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Could not add URLs");
+      setJobs(await fetch("/api/downloader/queue").then((r) => r.json()));
+      toast.success(body.added > 0 ? `Added ${body.added} to queue` : "No new URLs added");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not add URLs");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const scrapeAndAdd = async (profileUrl: string, limit?: number) => {
@@ -77,14 +85,18 @@ export default function DownloaderPage() {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId: id }),
-    });
+    }).then(() => fetch("/api/downloader/queue"))
+      .then((r) => r.json())
+      .then(setJobs);
 
   const clearFinished = () =>
     fetch("/api/downloader/queue", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
-    });
+    }).then(() => fetch("/api/downloader/queue"))
+      .then((r) => r.json())
+      .then(setJobs);
 
   return (
     <div className="flex flex-col gap-6 pb-16">

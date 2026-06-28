@@ -39,7 +39,7 @@ export async function runPublisherTick(): Promise<void> {
     const { data: jobs, error } = await supabase
       .from("pub_upload_jobs")
       .select(`
-        id, video_id, account_id, idempotency_key, retry_count,
+        id, campaign_id, video_id, account_id, idempotency_key, retry_count,
         instagram_container_id,
         pub_videos ( storage_object_id, pub_storage_objects ( key ) ),
         pub_instagram_accounts ( ig_user_id, access_token, username ),
@@ -55,8 +55,8 @@ export async function runPublisherTick(): Promise<void> {
     if (!jobs || jobs.length === 0) return;
 
     console.log(`[Publisher] Processing ${jobs.length} due job(s)`);
-    const results = await Promise.allSettled(jobs.map((job) => processJob(job)));
-    const failed = results.filter((result) => result.status === "rejected").length;
+    const results = await Promise.allSettled(jobs.map((job: unknown) => processJob(job)));
+    const failed = results.filter((result: PromiseSettledResult<void>) => result.status === "rejected").length;
     console.log(`[Publisher] Tick complete in ${Date.now() - tickStarted}ms (${jobs.length - failed}/${jobs.length} settled)`);
   } catch (err) {
     console.error("[Publisher] Tick error:", err);
@@ -101,6 +101,9 @@ async function processJob(job: any): Promise<void> {
   if (!count || count === 0) {
     console.log(`[Publisher] Job ${job.id} already claimed by another worker — skipping`);
     return;
+  }
+  if (job.campaign_id) {
+    await supabase.from("pub_campaigns").update({ status: "running" }).eq("id", job.campaign_id);
   }
 
   const { data: history } = await supabase
@@ -198,6 +201,8 @@ async function processJob(job: any): Promise<void> {
       .eq("id", job.video_id)
       .eq("publish_status", "unpublished");
 
+    if (job.campaign_id) await refreshCampaignStatus(job.campaign_id);
+
     console.log(`[Publisher] ✓ Job ${job.id} published → Instagram media ${mediaId}`);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
@@ -209,6 +214,7 @@ async function processJob(job: any): Promise<void> {
         error_message: errorMessage,
         retry_count: newRetryCount,
       }).eq("id", job.id);
+      if (job.campaign_id) await refreshCampaignStatus(job.campaign_id);
       console.error(`[Publisher] ✗ Job ${job.id} failed permanently: ${errorMessage}`);
     } else {
       const retryAt = new Date(Date.now() + RETRY_DELAY_MS).toISOString();
@@ -225,5 +231,21 @@ async function processJob(job: any): Promise<void> {
   }
   } finally {
     activeJobs.delete(job.id);
+  }
+}
+
+async function refreshCampaignStatus(campaignId: string): Promise<void> {
+  const { data: jobs } = await supabase
+    .from("pub_upload_jobs")
+    .select("status")
+    .eq("campaign_id", campaignId);
+  const statuses = (jobs ?? []).map((j: { status: string }) => j.status);
+  if (statuses.length === 0) return;
+  if (statuses.some((s: string) => s === "failed")) {
+    await supabase.from("pub_campaigns").update({ status: "failed" }).eq("id", campaignId);
+  } else if (statuses.every((s: string) => s === "published")) {
+    await supabase.from("pub_campaigns").update({ status: "completed" }).eq("id", campaignId);
+  } else if (statuses.some((s: string) => ["preparing", "uploading", "waiting_for_instagram", "publishing"].includes(s))) {
+    await supabase.from("pub_campaigns").update({ status: "running" }).eq("id", campaignId);
   }
 }

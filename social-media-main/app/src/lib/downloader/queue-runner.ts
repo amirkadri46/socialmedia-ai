@@ -1,5 +1,5 @@
 import { v4 as uuid } from "uuid";
-import { readQueue, writeQueue, upsertJob, readDownloaderSettings } from "./store";
+import { readQueue, writeQueue, upsertJob, removeJob, readDownloaderSettings } from "./store";
 import { inspectUrl, downloadSingleJob, detectPlatform } from "./engine";
 import { ingestVideo } from "@/lib/services/video-ingestion-service";
 import type { DownloadJob, DownloaderSettings } from "./types";
@@ -158,6 +158,7 @@ class QueueRunner {
       upsertJob(job);
       newJobs.push(job);
     }
+    this.tick();
     return newJobs;
   }
 
@@ -180,6 +181,12 @@ class QueueRunner {
   cancelJob(id: string) {
     const job = this.getJob(id);
     if (!job) return;
+    if (job.status === "failed" || job.status === "completed") {
+      this.liveJobs.delete(id);
+      removeJob(id);
+      this.diskCache = null;
+      return;
+    }
     // ponytail: can't kill the yt-dlp child cleanly; cancel = mark failed.
     this.patch(id, { status: "failed", error: "Cancelled by user" });
     upsertJob(this.getJob(id)!);

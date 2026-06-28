@@ -18,7 +18,7 @@ export async function runCampaignRunnerTick(): Promise<void> {
     const { data: campaigns } = await supabase
       .from("pub_campaigns")
       .select("id")
-      .eq("status", "running");
+      .in("status", ["running", "scheduled"]);
 
     if (!campaigns || campaigns.length === 0) return;
 
@@ -65,14 +65,14 @@ async function processCampaign(campaignId: string): Promise<void> {
     .from("pub_campaign_runner_state")
     .upsert({
       campaign_id: campaignId,
-      cursor: existingState?.cursor ?? 0,
+      cursor: existingState?.cursor ?? -1,
       last_tick: now.toISOString(),
       locked_until: lockedUntil,
       worker_id: WORKER_ID,
     });
   if (lockError) return;
 
-  const cursor = existingState?.cursor ?? 0;
+  const cursor = existingState?.cursor ?? -1;
 
   // finding #10: caption_prompt_template removed — not used here
   const { data: campaign } = await supabase
@@ -100,9 +100,17 @@ async function processCampaign(campaignId: string): Promise<void> {
     .eq("campaign_id", campaignId);
 
   if (!campaignVideos || campaignVideos.length === 0) {
-    await supabase.from("pub_campaigns").update({ status: "completed" }).eq("id", campaignId);
+    const { data: remainingJobs } = await supabase
+      .from("pub_upload_jobs")
+      .select("status")
+      .eq("campaign_id", campaignId);
+    const statuses = (remainingJobs ?? []).map((j: { status: string }) => j.status);
+    if (statuses.length > 0 && statuses.every((s: string) => s === "published")) {
+      await supabase.from("pub_campaigns").update({ status: "completed" }).eq("id", campaignId);
+    } else if (statuses.some((s: string) => s === "failed")) {
+      await supabase.from("pub_campaigns").update({ status: "failed" }).eq("id", campaignId);
+    }
     await releaseLock(campaignId);
-    console.log(`[CampaignRunner] Campaign ${campaignId} completed — all videos scheduled`);
     return;
   }
 
@@ -154,11 +162,15 @@ async function processCampaign(campaignId: string): Promise<void> {
   }
 
   if (jobs.length > 0) {
-    const { error } = await supabase.from("pub_upload_jobs").insert(jobs);
+    const { error } = await supabase.from("pub_upload_jobs").upsert(jobs, { onConflict: "idempotency_key", ignoreDuplicates: true });
     // finding #9: check Postgres unique_violation code, not fragile message string
     if (error && error.code !== "23505") {
       throw new Error(`Failed to insert jobs: ${error.message}`);
     }
+    await supabase
+      .from("pub_campaigns")
+      .update({ status: Date.parse(jobs[0].scheduled_at) > Date.now() ? "scheduled" : "running" })
+      .eq("id", campaignId);
     console.log(`[CampaignRunner] Campaign ${campaignId}: generated ${jobs.length} jobs, cursor → ${newCursor}`);
   }
 

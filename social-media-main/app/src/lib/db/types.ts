@@ -1,7 +1,7 @@
 export type StorageStatus = "available" | "deleted";
 export type PublishStatus = "unpublished" | "scheduled" | "published";
 export type AccountStatus = "connected" | "needs_reauth" | "disconnected";
-export type CampaignStatus = "draft" | "ready" | "scheduled" | "running" | "paused" | "completed" | "cancelled";
+export type CampaignStatus = "draft" | "ready" | "scheduled" | "running" | "paused" | "completed" | "failed" | "cancelled";
 export type JobStatus =
   | "queued" | "preparing" | "uploading" | "waiting_for_instagram"
   | "publishing" | "published" | "failed" | "cancelled";

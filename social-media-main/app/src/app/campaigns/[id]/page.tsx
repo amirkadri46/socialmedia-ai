@@ -40,6 +40,7 @@ const STATUS_STYLE: Record<string, string> = {
   running: "bg-green-900/50 text-green-400",
   paused: "bg-orange-900/50 text-orange-400",
   completed: "bg-green-900/50 text-green-400",
+  failed: "bg-red-900/50 text-red-400",
   cancelled: "bg-red-900/50 text-red-400",
 };
 
@@ -132,6 +133,11 @@ export default function CampaignDetailPage() {
     }
   };
 
+  const saveSchedule = (rule: ScheduleRule) => {
+    setCampaign((current) => current ? { ...current, schedule_rule: rule, timezone: rule.timezone } : current);
+    void patchCampaign({ schedule_rule: rule, timezone: rule.timezone });
+  };
+
   const canEdit = campaign?.status === "draft" || campaign?.status === "paused";
 
   if (!campaign) {
@@ -186,18 +192,19 @@ export default function CampaignDetailPage() {
               Publish
             </Button>
           )}
-          {campaign.status !== "cancelled" && campaign.status !== "completed" && (
+          {campaign.status !== "cancelled" && (
             <Button
               size="sm"
               variant="ghost"
               className="text-destructive hover:text-destructive"
               onClick={async () => {
+                if (!confirm(`Delete campaign "${campaign.name}"? This cannot be undone.`)) return;
                 await fetch(`/api/campaigns/${id}`, { method: "DELETE" });
                 router.push("/campaigns");
               }}
               disabled={saving}
             >
-              Cancel
+              Delete Campaign
             </Button>
           )}
         </div>
@@ -289,7 +296,7 @@ export default function CampaignDetailPage() {
         <TabsContent value="schedule" className="mt-4">
           <ScheduleRuleEditor
             value={campaign.schedule_rule}
-            onChange={(r: ScheduleRule) => patchCampaign({ schedule_rule: r })}
+            onChange={saveSchedule}
             disabled={!canEdit}
           />
         </TabsContent>

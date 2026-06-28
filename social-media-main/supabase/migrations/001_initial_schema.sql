@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS pub_campaigns (
   id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name                    text NOT NULL,
   status                  text NOT NULL DEFAULT 'draft'
-                          CHECK (status IN ('draft', 'ready', 'scheduled', 'running', 'paused', 'completed', 'cancelled')),
+                          CHECK (status IN ('draft', 'ready', 'scheduled', 'running', 'paused', 'completed', 'failed', 'cancelled')),
   caption_prompt_template text,
   assignment_mode         text NOT NULL DEFAULT 'crosspost'
                           CHECK (assignment_mode IN ('crosspost', 'distribute')),

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Megaphone, Plus } from "lucide-react";
+import { Megaphone, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -21,6 +21,7 @@ const STATUS_STYLE: Record<string, string> = {
   running: "bg-green-900/50 text-green-400",
   paused: "bg-orange-900/50 text-orange-400",
   completed: "bg-green-900/50 text-green-400",
+  failed: "bg-red-900/50 text-red-400",
   cancelled: "bg-red-900/50 text-red-400 line-through",
 };
 
@@ -45,6 +46,11 @@ export default function CampaignsPage() {
   };
   const resume = async (id: string) => {
     await fetch(`/api/campaigns/${id}/resume`, { method: "POST" });
+    fetchCampaigns();
+  };
+  const deleteCampaign = async (id: string, name: string) => {
+    if (!confirm(`Delete campaign "${name}"? This cannot be undone.`)) return;
+    await fetch(`/api/campaigns/${id}`, { method: "DELETE" });
     fetchCampaigns();
   };
 
@@ -102,6 +108,14 @@ export default function CampaignsPage() {
                       )}
                       <Button size="sm" variant="ghost" onClick={() => router.push(`/campaigns/${c.id}`)}>
                         Manage
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => deleteCampaign(c.id, c.name)}
+                      >
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   </TableCell>

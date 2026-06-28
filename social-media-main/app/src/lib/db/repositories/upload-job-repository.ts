@@ -58,9 +58,10 @@ export const uploadJobRepository = {
   },
 
   async createMany(data: Omit<UploadJob, "id" | "created_at">[]): Promise<void> {
+    if (data.length === 0) return;
     const { error } = await supabaseServer
       .from("pub_upload_jobs")
-      .insert(data);
+      .upsert(data, { onConflict: "idempotency_key", ignoreDuplicates: true });
     if (error) throw new Error(`uploadJobRepository.createMany: ${error.message}`);
   },
 

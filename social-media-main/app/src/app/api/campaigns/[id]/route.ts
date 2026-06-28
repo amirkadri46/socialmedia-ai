@@ -8,6 +8,7 @@ const CAMPAIGN_STATUSES = new Set<CampaignStatus>([
   "running",
   "paused",
   "completed",
+  "failed",
   "cancelled",
 ]);
 

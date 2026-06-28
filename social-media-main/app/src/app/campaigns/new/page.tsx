@@ -97,11 +97,19 @@ export default function NewCampaignPage() {
   const handlePublish = async (publish: boolean) => {
     if (!createdId) return;
     setSaving(true);
+    setError("");
     try {
+      await jsonOrError(await fetch(`/api/campaigns/${createdId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schedule_rule: rule, timezone: rule.timezone }),
+      }), "Could not save schedule");
       if (publish) {
-        await fetch(`/api/campaigns/${createdId}/publish`, { method: "POST" });
+        await jsonOrError(await fetch(`/api/campaigns/${createdId}/publish`, { method: "POST" }), "Could not publish campaign");
       }
       router.push("/campaigns");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save campaign");
     } finally {
       setSaving(false);
     }

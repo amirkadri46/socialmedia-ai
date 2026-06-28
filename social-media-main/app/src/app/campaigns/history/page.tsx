@@ -21,9 +21,11 @@ import {
 } from "@/components/ui/table";
 import { Film } from "lucide-react";
 import type { PublishHistoryWithMeta } from "@/lib/db/repositories/publish-history-repository";
+import type { Campaign } from "@/lib/db/types";
 
 const PAGE_SIZE = 50;
 type HistoryEntry = PublishHistoryWithMeta & { thumbnail_url?: string | null };
+const CAMPAIGN_STATUSES = ["draft", "scheduled", "running", "completed", "failed", "cancelled"];
 
 function formatPublished(iso: string) {
   return new Date(iso).toLocaleString(undefined, {
@@ -57,6 +59,7 @@ export default function HistoryPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<{ id: string; username: string }[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [page, setPage] = useState(0);
 
   const [accountId, setAccountId] = useState("");
@@ -80,6 +83,7 @@ export default function HistoryPage() {
 
   useEffect(() => {
     fetch("/api/accounts").then((r) => r.json()).then(setAccounts);
+    fetch("/api/campaigns").then((r) => r.json()).then(setCampaigns);
   }, []);
 
   useEffect(() => { queueMicrotask(() => void fetchEntries()); }, [fetchEntries]);
@@ -151,6 +155,14 @@ export default function HistoryPage() {
             <p className="text-xs text-muted-foreground">{label}</p>
             <p className="text-xl font-semibold">{value}</p>
           </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2 text-xs">
+        {CAMPAIGN_STATUSES.map((status) => (
+          <span key={status} className="rounded border border-border px-2 py-1 text-muted-foreground">
+            {status}: {campaigns.filter((c) => c.status === status).length}
+          </span>
         ))}
       </div>
 

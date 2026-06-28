@@ -1,9 +1,10 @@
 import os from "os";
 import path from "path";
-import { mkdirSync, readdirSync, existsSync } from "fs";
+import { mkdirSync, readdirSync, existsSync, writeFileSync } from "fs";
 import { run, ytDlpPath, ffmpegPath, ytDlpAvailable } from "@/lib/clip/ffmpeg";
 import { cookieArgs } from "@/lib/clip/download";
 import { repos } from "@/lib/db";
+import { scrapeVideoByUrl } from "@/lib/apify";
 import type { DownloadPlatform, DownloadQuality } from "./types";
 
 export function detectPlatform(url: string): DownloadPlatform {
@@ -16,6 +17,14 @@ function withInstagramHint(url: string, err: unknown): Error {
   const message = err instanceof Error ? err.message : String(err);
   if (!/instagram\.com/i.test(url)) return new Error(message);
   return new Error(`${message} Instagram downloads usually need fresh instagram.com cookies in Settings > Clipping, or YTDLP_COOKIES_TEXT on Railway.`);
+}
+
+async function scrapeInstagram(url: string) {
+  try {
+    return await scrapeVideoByUrl(url);
+  } catch {
+    return null;
+  }
 }
 
 /** Cookie args from Clip Settings — reuses the clip pipeline's logic (incl. env fallback). */
@@ -52,6 +61,15 @@ export async function inspectUrl(
       url,
     ]));
   } catch (err) {
+    const reel = await scrapeInstagram(url);
+    if (reel?.videoUrl) {
+      return {
+        title: url,
+        creator: reel.ownerUsername || "Instagram",
+        thumbnail: reel.displayUrl || reel.images?.[0] || "",
+        platform: "instagram",
+      };
+    }
     throw withInstagramHint(url, err);
   }
   const json = JSON.parse(stdout);
@@ -97,6 +115,14 @@ export async function downloadSingleJob(
       }
     );
   } catch (err) {
+    const reel = job.platform === "instagram" ? await scrapeInstagram(job.url) : null;
+    if (reel?.videoUrl) {
+      const response = await fetch(reel.videoUrl);
+      if (!response.ok) throw withInstagramHint(job.url, err);
+      const videoPath = path.join(tempDir, "instagram.mp4");
+      writeFileSync(videoPath, Buffer.from(await response.arrayBuffer()));
+      return { videoPath, thumbPath: null };
+    }
     throw withInstagramHint(job.url, err);
   }
 

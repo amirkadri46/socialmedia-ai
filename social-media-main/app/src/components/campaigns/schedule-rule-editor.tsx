@@ -39,7 +39,6 @@ const QUICK_START_OPTIONS = [
   { label: "In 1 hour",        value: "60" },
 ];
 
-const WINDOW_HOURS = Array.from({ length: 24 }, (_, i) => i);
 const TIMEZONES = [
   "Asia/Kolkata",
   "America/New_York",
@@ -57,16 +56,6 @@ const RANDOMIZE_OPTIONS = [
   { label: "±15 min", value: 15 },
   { label: "±30 min", value: 30 },
 ];
-
-function toHHMM(h: number) {
-  return `${String(h).padStart(2, "0")}:00`;
-}
-function formatHour(h: number) {
-  if (h === 0) return "12:00 AM";
-  if (h < 12) return `${h}:00 AM`;
-  if (h === 12) return "12:00 PM";
-  return `${h - 12}:00 PM`;
-}
 
 function freqKey(hours: number): string {
   const match = FREQUENCY_OPTIONS.find((o) => Math.abs(o.hours - hours) < 0.0001);
@@ -113,7 +102,7 @@ export function ScheduleRuleEditor({ value, onChange, disabled }: Props) {
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          Auto-fills Start date + Window to begin publishing at the selected time.
+          Auto-fills the start date and daily publishing window.
         </p>
       </div>
 
@@ -162,42 +151,28 @@ export function ScheduleRuleEditor({ value, onChange, disabled }: Props) {
 
       <div className="space-y-1.5">
         <Label>Window start</Label>
-        <Select
+        <Input
+          type="time"
           disabled={disabled}
           value={value.windowStart}
-          onValueChange={(v) => set({ windowStart: v })}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {WINDOW_HOURS.map((h) => (
-              <SelectItem key={h} value={toHHMM(h)}>
-                {formatHour(h)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onChange={(e) => set({ windowStart: e.target.value })}
+        />
+        <p className="text-xs text-muted-foreground">
+          First time each day the worker is allowed to publish.
+        </p>
       </div>
 
       <div className="space-y-1.5">
         <Label>Window end</Label>
-        <Select
+        <Input
+          type="time"
           disabled={disabled}
           value={value.windowEnd}
-          onValueChange={(v) => set({ windowEnd: v })}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {WINDOW_HOURS.map((h) => (
-              <SelectItem key={h} value={toHHMM(h)}>
-                {formatHour(h)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onChange={(e) => set({ windowEnd: e.target.value })}
+        />
+        <p className="text-xs text-muted-foreground">
+          Last time each day the worker is allowed to publish.
+        </p>
       </div>
 
       <div className="space-y-1.5">
@@ -229,6 +204,10 @@ export function ScheduleRuleEditor({ value, onChange, disabled }: Props) {
           </SelectContent>
         </Select>
       </div>
+
+      <p className="col-span-2 text-xs text-muted-foreground">
+        Publishing is allowed only during this daily window. If the next post falls outside it, scheduling moves to the next valid window.
+      </p>
     </div>
   );
 }

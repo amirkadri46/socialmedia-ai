@@ -60,6 +60,14 @@ export const campaignRepository = {
     if (error) throw new Error(`campaignRepository.delete: ${error.message}`);
   },
 
+  async detachUploadJobs(campaignId: string): Promise<void> {
+    const { error } = await supabaseServer
+      .from("pub_upload_jobs")
+      .update({ campaign_id: null })
+      .eq("campaign_id", campaignId);
+    if (error) throw new Error(`campaignRepository.detachUploadJobs: ${error.message}`);
+  },
+
   async getVideos(campaignId: string): Promise<CampaignVideo[]> {
     const { data, error } = await supabaseServer
       .from("pub_campaign_videos")

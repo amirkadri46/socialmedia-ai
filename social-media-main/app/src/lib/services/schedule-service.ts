@@ -1,6 +1,6 @@
 import { addHours, parseISO, setHours, setMinutes, startOfDay, addDays, isAfter, isBefore } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
-import type { ScheduleRule } from "@/lib/db/types";
+import type { ScheduleRule } from "../db/types";
 
 export function computeNextSlot(rule: ScheduleRule, from: Date): Date {
   const tz = rule.timezone;
@@ -37,6 +37,7 @@ export interface CampaignPreview {
   estimatedDurationDays: number;
   firstPost: string;
   lastPost: string;
+  slots: string[];
 }
 
 export function calculatePreview(
@@ -45,13 +46,15 @@ export function calculatePreview(
   rule: ScheduleRule
 ): CampaignPreview {
   const totalJobs = videoCount * accountCount;
-  if (totalJobs === 0) return { totalJobs: 0, estimatedDurationDays: 0, firstPost: "", lastPost: "" };
+  if (totalJobs === 0) return { totalJobs: 0, estimatedDurationDays: 0, firstPost: "", lastPost: "", slots: [] };
 
   const firstPost = computeFirstSlot(rule);
 
   let current = firstPost;
+  const slots = [firstPost.toISOString()];
   for (let i = 1; i < videoCount; i++) {
     current = computeNextSlot(rule, current);
+    slots.push(current.toISOString());
   }
   const lastPost = current;
 
@@ -63,5 +66,6 @@ export function calculatePreview(
     estimatedDurationDays,
     firstPost: firstPost.toISOString(),
     lastPost: lastPost.toISOString(),
+    slots,
   };
 }
