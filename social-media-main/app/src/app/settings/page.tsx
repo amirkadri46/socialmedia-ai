@@ -34,6 +34,7 @@ const OPENROUTER_MODELS = [
 ];
 
 type Provider = "openai" | "openrouter";
+type SecretPresence = Record<string, boolean>;
 
 const SECTIONS = [
   { id: "ai", label: "AI Provider", icon: Cpu },
@@ -45,7 +46,7 @@ const SECTIONS = [
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
 
-function KeyInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+function KeyInput({ value, onChange, placeholder, saved }: { value: string; onChange: (v: string) => void; placeholder: string; saved?: boolean }) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
@@ -53,7 +54,8 @@ function KeyInput({ value, onChange, placeholder }: { value: string; onChange: (
         type={show ? "text" : "password"}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
+        placeholder={saved && !value ? "Saved key configured" : placeholder}
+        autoComplete="off"
         className="pr-10 font-mono"
       />
       <button
@@ -135,6 +137,7 @@ export default function SettingsPage() {
   const [metaAppId, setMetaAppId] = useState("");
   const [metaAppSecret, setMetaAppSecret] = useState("");
   const [enableSocialPublish, setEnableSocialPublish] = useState(false);
+  const [secretPresence, setSecretPresence] = useState<SecretPresence>({});
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -168,6 +171,7 @@ export default function SettingsPage() {
         setMetaAppId(s.metaAppId ?? "");
         setMetaAppSecret(s.metaAppSecret ?? "");
         setEnableSocialPublish(!!s.enableSocialPublish);
+        setSecretPresence(s.secretPresence ?? {});
       })
       .catch(() => {});
   }, []);
@@ -193,6 +197,18 @@ export default function SettingsPage() {
         throw new Error(body.error ?? "Failed to save settings");
       }
       setSaved(true);
+      setSecretPresence((p) => ({
+        ...p,
+        openaiApiKey: p.openaiApiKey || !!openaiKey,
+        openrouterApiKey: p.openrouterApiKey || !!openrouterKey,
+        apifyApiToken: p.apifyApiToken || !!apifyToken,
+        deepgramApiKey: p.deepgramApiKey || !!deepgramApiKey,
+        assemblyaiApiKey: p.assemblyaiApiKey || !!assemblyaiApiKey,
+        ytDlpCookiesBrowser: p.ytDlpCookiesBrowser || !!ytDlpCookiesBrowser,
+        ytDlpCookiesText: p.ytDlpCookiesText || !!ytDlpCookiesText,
+        metaAppId: p.metaAppId || !!metaAppId,
+        metaAppSecret: p.metaAppSecret || !!metaAppSecret,
+      }));
       setTimeout(() => setSaved(false), 2000);
     } catch {
       alert("Failed to save settings");
@@ -255,14 +271,14 @@ export default function SettingsPage() {
                 <div className={`space-y-4 rounded-lg border p-4 ${provider === "openai" ? "" : "opacity-60"}`}>
                   <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">OpenAI — Direct</p>
                   <Field label="API Key" hint={<>Model: <span className="font-mono text-foreground/70">gpt-4o</span> (fixed)</>}>
-                    <KeyInput value={openaiKey} onChange={setOpenaiKey} placeholder="sk-..." />
+                    <KeyInput value={openaiKey} onChange={setOpenaiKey} placeholder="sk-..." saved={secretPresence.openaiApiKey} />
                   </Field>
                 </div>
 
                 <div className={`space-y-4 rounded-lg border p-4 ${provider === "openrouter" ? "" : "opacity-60"}`}>
                   <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">OpenRouter</p>
                   <Field label="API Key" hint={<>Get your key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">openrouter.ai/keys</a></>}>
-                    <KeyInput value={openrouterKey} onChange={setOpenrouterKey} placeholder="sk-or-v1-..." />
+                    <KeyInput value={openrouterKey} onChange={setOpenrouterKey} placeholder="sk-or-v1-..." saved={secretPresence.openrouterApiKey} />
                   </Field>
                   <Field label="Model">
                     <Select value={openrouterModel} onValueChange={setOpenrouterModel}>
@@ -323,7 +339,7 @@ export default function SettingsPage() {
                   <Textarea value={emailLengthGuidance} onChange={(e) => setEmailLengthGuidance(e.target.value)} rows={2} className="resize-none" />
                 </Field>
                 <Field label="Apify API token" hint="Used to scrape LinkedIn profiles by URL. Not required for CSV import.">
-                  <KeyInput value={apifyToken} onChange={setApifyToken} placeholder="apify_api_..." />
+                  <KeyInput value={apifyToken} onChange={setApifyToken} placeholder="apify_api_..." saved={secretPresence.apifyApiToken} />
                 </Field>
 
                 <div className="border-t pt-6">
@@ -396,10 +412,10 @@ export default function SettingsPage() {
                   </div>
                 </Field>
                 <Field label="Deepgram API key" hint={<>Recommended — word-level timestamps in one call. Get a key at <a href="https://deepgram.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">deepgram.com</a>.</>}>
-                  <KeyInput value={deepgramApiKey} onChange={setDeepgramApiKey} placeholder="dg_..." />
+                  <KeyInput value={deepgramApiKey} onChange={setDeepgramApiKey} placeholder="dg_..." saved={secretPresence.deepgramApiKey} />
                 </Field>
                 <Field label="AssemblyAI API key (alternative)">
-                  <KeyInput value={assemblyaiApiKey} onChange={setAssemblyaiApiKey} placeholder="..." />
+                  <KeyInput value={assemblyaiApiKey} onChange={setAssemblyaiApiKey} placeholder="..." saved={secretPresence.assemblyaiApiKey} />
                 </Field>
                 <div className="grid grid-cols-3 gap-4">
                   <Field label="Default caption preset"><Input value={defaultCaptionPreset} onChange={(e) => setDefaultCaptionPreset(e.target.value)} /></Field>
@@ -450,10 +466,15 @@ export default function SettingsPage() {
                   </ol>
                 </div>
                 <Field label="Instagram App ID" hint="From Meta Developer Console → API setup with Instagram login.">
-                  <Input value={metaAppId} onChange={(e) => setMetaAppId(e.target.value)} placeholder="2008737423349466" className="font-mono" />
+                  <Input
+                    value={metaAppId}
+                    onChange={(e) => setMetaAppId(e.target.value)}
+                    placeholder={secretPresence.metaAppId ? "Saved App ID configured" : "2008737423349466"}
+                    className="font-mono"
+                  />
                 </Field>
                 <Field label="Instagram App Secret" hint="From the same page — click Show to reveal it.">
-                  <KeyInput value={metaAppSecret} onChange={setMetaAppSecret} placeholder="..." />
+                  <KeyInput value={metaAppSecret} onChange={setMetaAppSecret} placeholder="..." saved={secretPresence.metaAppSecret} />
                 </Field>
                 <div className="flex items-center justify-between rounded-md border px-4 py-3">
                   <div>

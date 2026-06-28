@@ -74,6 +74,7 @@ export function VideoPreviewModal({ videoId, onClose, onDeleted }: VideoPreviewM
     <Dialog open={!!videoId} onOpenChange={(open) => { if (!open) onClose(); }}>
       {/* wide enough for 9:16 video + side panel */}
       <DialogContent className="max-w-3xl w-[92vw] p-0 overflow-hidden">
+        {!detail && <DialogTitle className="sr-only">Video preview</DialogTitle>}
         {detail ? (
           <div className="flex" style={{ minHeight: 520 }}>
             {/* Left — 9:16 video, fixed width */}
@@ -96,7 +97,7 @@ export function VideoPreviewModal({ videoId, onClose, onDeleted }: VideoPreviewM
               {/* Meta */}
               <div className="px-5 pt-5 pb-3">
                 <DialogHeader>
-                  <DialogTitle className="text-base leading-snug">{detail.title}</DialogTitle>
+                  <DialogTitle className="text-base leading-snug truncate pr-6">{detail.title}</DialogTitle>
                 </DialogHeader>
                 <p className="text-sm text-muted-foreground mt-1">
                   {[detail.creator, detail.platform, detail.duration_sec ? `${Math.round(detail.duration_sec)}s` : null]

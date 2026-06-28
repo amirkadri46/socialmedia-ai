@@ -16,7 +16,7 @@ export const fileSettings: SettingsRepo = {
 };
 
 // ── Supabase backend ─────────────────────────────────────────────────────────
-// Secrets are injected from env vars, not from DB, so GET /api/settings never exposes them.
+// GET /api/settings redacts these before they reach the browser.
 
 function overlayEnvSecrets(base: Partial<AppSettings>): AppSettings {
   return {
@@ -34,16 +34,16 @@ function overlayEnvSecrets(base: Partial<AppSettings>): AppSettings {
     defaultClipLength: base.defaultClipLength ?? "Auto (0-3m)",
     enableSocialPublish: base.enableSocialPublish ?? false,
     editorShortcuts: base.editorShortcuts ?? { ...DEFAULT_SHORTCUTS },
-    // Env vars take priority; DB values are the fallback (set via Settings UI)
-    openaiApiKey: process.env.OPENAI_API_KEY ?? base.openaiApiKey ?? "",
-    openrouterApiKey: process.env.OPENROUTER_API_KEY ?? base.openrouterApiKey ?? "",
-    apifyApiToken: process.env.APIFY_API_TOKEN ?? base.apifyApiToken ?? "",
-    deepgramApiKey: process.env.DEEPGRAM_API_KEY ?? base.deepgramApiKey ?? "",
-    assemblyaiApiKey: process.env.ASSEMBLYAI_API_KEY ?? base.assemblyaiApiKey ?? "",
-    metaAppId: process.env.META_APP_ID ?? base.metaAppId ?? "",
-    metaAppSecret: process.env.META_APP_SECRET ?? base.metaAppSecret ?? "",
-    ytDlpCookiesBrowser: process.env.YTDLP_COOKIES_BROWSER ?? base.ytDlpCookiesBrowser ?? "",
-    ytDlpCookiesText: process.env.YTDLP_COOKIES_TEXT ?? base.ytDlpCookiesText ?? "",
+    // Settings UI wins; env vars are the fallback for fresh deploys.
+    openaiApiKey: base.openaiApiKey ?? process.env.OPENAI_API_KEY ?? "",
+    openrouterApiKey: base.openrouterApiKey ?? process.env.OPENROUTER_API_KEY ?? "",
+    apifyApiToken: base.apifyApiToken ?? process.env.APIFY_API_TOKEN ?? "",
+    deepgramApiKey: base.deepgramApiKey ?? process.env.DEEPGRAM_API_KEY ?? "",
+    assemblyaiApiKey: base.assemblyaiApiKey ?? process.env.ASSEMBLYAI_API_KEY ?? "",
+    metaAppId: base.metaAppId ?? process.env.META_APP_ID ?? "",
+    metaAppSecret: base.metaAppSecret ?? process.env.META_APP_SECRET ?? "",
+    ytDlpCookiesBrowser: base.ytDlpCookiesBrowser ?? process.env.YTDLP_COOKIES_BROWSER ?? "",
+    ytDlpCookiesText: base.ytDlpCookiesText ?? process.env.YTDLP_COOKIES_TEXT ?? "",
   };
 }
 

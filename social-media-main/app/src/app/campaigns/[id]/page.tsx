@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, Film, Users, Calendar, BarChart2, ListChecks } from "lucide-react";
+import { Loader2, Film, Users, Calendar, BarChart2, ListChecks, RefreshCw } from "lucide-react";
 import { ScheduleRuleEditor } from "@/components/campaigns/schedule-rule-editor";
 import { CampaignPreviewCard } from "@/components/campaigns/campaign-preview-card";
 import { AccountSelector } from "@/components/campaigns/account-selector";
@@ -60,6 +60,7 @@ export default function CampaignDetailPage() {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchAll = useCallback(async () => {
     const [c, v, a, j] = await Promise.all([
@@ -176,6 +177,14 @@ export default function CampaignDetailPage() {
           </span>
         </div>
         <div className="flex gap-2 shrink-0">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={async () => { setRefreshing(true); try { await fetchAll(); } finally { setRefreshing(false); } }}
+            disabled={refreshing}
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+          </Button>
           {campaign.status === "running" && (
             <Button size="sm" variant="outline" onClick={() => action("pause")} disabled={saving}>
               Pause

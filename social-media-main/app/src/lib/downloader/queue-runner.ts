@@ -129,7 +129,7 @@ class QueueRunner {
 
   addJobs(urls: string[], quality: DownloadJob["quality"] = "best"): DownloadJob[] {
     const settings = readDownloaderSettings();
-    const existingUrls = new Set(this.getAllJobs().map((j) => j.url));
+    const existingUrls = new Set(this.getAllJobs().filter((j) => j.status !== "failed").map((j) => j.url));
     this.diskCache = null;
     const newJobs: DownloadJob[] = [];
 

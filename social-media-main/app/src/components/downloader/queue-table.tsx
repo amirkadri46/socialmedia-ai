@@ -105,7 +105,7 @@ export function QueueTable({
                 <TableCell>
                   {job.thumbnail ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={job.thumbnail} alt="" className="h-10 w-10 rounded object-cover" />
+                    <img src={job.thumbnail} alt="" referrerPolicy="no-referrer" className="h-10 w-10 rounded object-cover" />
                   ) : (
                     <div className="flex h-10 w-10 items-center justify-center rounded bg-white/5">
                       <Download className="h-4 w-4 text-muted-foreground" />
