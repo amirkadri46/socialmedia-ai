@@ -1,8 +1,9 @@
 import { supabase } from "./lib/supabase";
 import { getSignedVideoUrl } from "./lib/storage";
 import { createReelContainer, waitForContainer, publishContainer } from "./instagram-publisher";
+import { WORKER_ID } from "./worker-id";
 
-const WORKER_ID = process.env.WORKER_ID ?? "worker-1";
+
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 15 * 60 * 1000;
 const JOBS_PER_TICK = 5;
@@ -32,7 +33,7 @@ export async function runPublisherTick(): Promise<void> {
       await supabase
         .from("pub_upload_jobs")
         .update({ status: "queued", claimed_by: null, claimed_at: null })
-        .in("id", staleJobs.map((j: any) => j.id));
+        .in("id", staleJobs.map((j: { id: string }) => j.id));
       console.log(`[Publisher] Reclaimed ${staleJobs.length} stale job(s)`);
     }
 
@@ -41,9 +42,12 @@ export async function runPublisherTick(): Promise<void> {
       .select(`
         id, campaign_id, video_id, account_id, idempotency_key, retry_count,
         instagram_container_id,
-        pub_videos ( storage_object_id, pub_storage_objects ( key ) ),
-        pub_instagram_accounts ( ig_user_id, access_token, username ),
-        pub_video_captions ( caption, platform )
+        pub_videos (
+          storage_object_id,
+          pub_storage_objects!storage_object_id ( key ),
+          pub_video_captions ( caption, platform )
+        ),
+        pub_instagram_accounts ( ig_user_id, access_token, username )
       `)
       .eq("status", "queued")
       .lte("scheduled_at", now)
@@ -55,7 +59,7 @@ export async function runPublisherTick(): Promise<void> {
     if (!jobs || jobs.length === 0) return;
 
     console.log(`[Publisher] Processing ${jobs.length} due job(s)`);
-    const results = await Promise.allSettled(jobs.map((job: unknown) => processJob(job)));
+    const results = await Promise.allSettled(jobs.map((job: unknown) => processJob(job as PublisherJob)));
     const failed = results.filter((result: PromiseSettledResult<void>) => result.status === "rejected").length;
     console.log(`[Publisher] Tick complete in ${Date.now() - tickStarted}ms (${jobs.length - failed}/${jobs.length} settled)`);
   } catch (err) {
@@ -74,7 +78,20 @@ export async function resetClaimedJobs(): Promise<void> {
   if (error) console.error("[Publisher] Failed to reset claimed jobs on shutdown:", error);
 }
 
-async function processJob(job: any): Promise<void> {
+interface PublisherJob {
+  id: string;
+  campaign_id: string | null;
+  video_id: string;
+  account_id: string;
+  retry_count: number | null;
+  pub_videos: {
+    pub_storage_objects: { key: string } | null;
+    pub_video_captions: { caption: string; platform: string }[] | null;
+  } | null;
+  pub_instagram_accounts: { ig_user_id: string; access_token: string } | null;
+}
+
+async function processJob(job: PublisherJob): Promise<void> {
   if (activeJobs.has(job.id)) {
     console.log(`[Publisher] Job ${job.id} already active in this process - skipping`);
     return;
@@ -92,6 +109,7 @@ async function processJob(job: any): Promise<void> {
     .eq("id", job.id)
     .eq("status", "queued")
     .is("claimed_by", null)
+    // @ts-expect-error supabase-js types omit the count option on a post-update .select(); valid at runtime
     .select("id", { count: "exact", head: true });
 
   if (claimError) {
@@ -143,9 +161,10 @@ async function processJob(job: any): Promise<void> {
     const storageKey = job.pub_videos?.pub_storage_objects?.key;
     if (!storageKey) throw new Error("No storage key found for video");
 
+    const captions = job.pub_videos?.pub_video_captions;
     const caption =
-      job.pub_video_captions?.find((c: any) => c.platform === "instagram")?.caption ??
-      job.pub_video_captions?.[0]?.caption ??
+      captions?.find((c) => c.platform === "instagram")?.caption ??
+      captions?.[0]?.caption ??
       "";
 
     const account = job.pub_instagram_accounts;

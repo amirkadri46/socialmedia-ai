@@ -31,7 +31,7 @@ There is also an emerging **Publishing System** vertical (campaigns, video libra
 
 ### Overall Architecture
 
-The application is a **monolithic Next.js 16 app** (App Router) that serves both the UI and every API route. A separate **worker process** (`worker/index.ts`) handles the publishing system's background jobs. Both share the same Supabase database.
+The application is a **monolithic Next.js 16 app** (App Router) that serves both the UI and every API route. The publishing system's background jobs run **in-process** inside the same Node server, started on boot from `app/src/instrumentation.ts` (worker code at `app/src/lib/worker/`). Everything shares the same Supabase database.
 
 Two storage abstractions exist in parallel:
 
@@ -64,7 +64,7 @@ The `STORAGE_BACKEND` env var switches the `repos` abstraction layer between fil
                      └──────────────────────┘
 ```
 
-In development, the Next.js dev server and the worker run as separate processes. In production (Railway), the Next.js app runs as a Docker container; the worker is run separately by the npm script `worker` (`tsx --env-file-if-exists=.env ../worker/index.ts` from the `app/` directory).
+The worker (publisher, campaign runner, token refresh) runs in-process with the web server in both development (`next dev`) and production (Railway `next start`), launched once from `app/src/instrumentation.ts`. No separate worker process or Railway service is required.
 
 ### Technology Stack
 
@@ -954,7 +954,7 @@ Worker publisher → R2 signed URL → Instagram Graph API → pub_publish_histo
 ### Worker — Campaign Runner
 
 - **Type:** `setInterval` (5 minutes)
-- **Process:** Separate Node.js process (`worker/index.ts`)
+- **Process:** In-process with the web server (`app/src/lib/worker/index.ts`, started from `app/src/instrumentation.ts`)
 - **Logic:** For each running campaign, acquires a row lock and generates `upload_jobs` rows for the next batch of unprocessed videos × accounts, advancing the cursor.
 
 ### Worker — Publisher

@@ -1,8 +1,9 @@
 import { supabase } from "./lib/supabase";
-import { computeFirstSlot, computeNextSlot } from "../app/src/lib/services/schedule-service";
-import type { ScheduleRule } from "../app/src/lib/db/types";
+import { computeFirstSlot, computeNextSlot } from "@/lib/services/schedule-service";
+import type { ScheduleRule } from "@/lib/db/types";
+import { WORKER_ID } from "./worker-id";
 
-const WORKER_ID = process.env.WORKER_ID ?? "worker-1";
+
 const BATCH_SIZE = 50;
 const LOCK_DURATION_MS = 60_000;
 let tickRunning = false;
@@ -114,7 +115,7 @@ async function processCampaign(campaignId: string): Promise<void> {
     return;
   }
 
-  const accountIds = (campaignAccounts ?? []).map((a: any) => a.account_id);
+  const accountIds = (campaignAccounts ?? []).map((a: { account_id: string }) => a.account_id);
   if (accountIds.length === 0) {
     // finding #3: release lock before returning so the campaign isn't stuck for 60s
     await releaseLock(campaignId);
@@ -135,7 +136,15 @@ async function processCampaign(campaignId: string): Promise<void> {
     ? computeNextSlot(rule, new Date(lastJob.scheduled_at))
     : computeFirstSlot(rule);
 
-  const jobs: any[] = [];
+  const jobs: {
+    campaign_id: string;
+    video_id: string;
+    account_id: string;
+    scheduled_at: string;
+    idempotency_key: string;
+    status: string;
+    retry_count: number;
+  }[] = [];
   let newCursor = cursor;
 
   for (const cv of campaignVideos) {
