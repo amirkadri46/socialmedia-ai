@@ -24,7 +24,8 @@ const DEFAULT_RULE: ScheduleRule = {
   startDate: new Date().toISOString().split("T")[0],
 };
 
-async function jsonOrError(res: Response, fallback: string) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function jsonOrError(res: Response, fallback: string): Promise<any> {
   const text = await res.text();
   let body: Record<string, unknown> = {};
   try { body = JSON.parse(text); } catch { /* non-JSON (e.g. 500 page) */ }
