@@ -12,6 +12,12 @@ export function detectPlatform(url: string): DownloadPlatform {
   return "unknown";
 }
 
+function withInstagramHint(url: string, err: unknown): Error {
+  const message = err instanceof Error ? err.message : String(err);
+  if (!/instagram\.com/i.test(url)) return new Error(message);
+  return new Error(`${message} Instagram downloads usually need fresh instagram.com cookies in Settings > Clipping, or YTDLP_COOKIES_TEXT on Railway.`);
+}
+
 /** Cookie args from Clip Settings — reuses the clip pipeline's logic (incl. env fallback). */
 export async function buildCookieArgs(): Promise<string[]> {
   const s = await repos.settings.get();
@@ -36,13 +42,18 @@ export async function inspectUrl(
   if (!(await ytDlpAvailable())) {
     throw new Error("yt-dlp is not installed. Install it or set YT_DLP_PATH.");
   }
-  const { stdout } = await run(ytDlpPath(), [
-    "--dump-single-json",
-    "--no-warnings",
-    "--no-playlist",
-    ...await buildCookieArgs(),
-    url,
-  ]);
+  let stdout: string;
+  try {
+    ({ stdout } = await run(ytDlpPath(), [
+      "--dump-single-json",
+      "--no-warnings",
+      "--no-playlist",
+      ...await buildCookieArgs(),
+      url,
+    ]));
+  } catch (err) {
+    throw withInstagramHint(url, err);
+  }
   const json = JSON.parse(stdout);
   return {
     title: json.title || "Untitled",
@@ -63,27 +74,31 @@ export async function downloadSingleJob(
   const tempDir = getTempDir(job.id);
   const outTemplate = path.join(tempDir, "%(title)s.%(ext)s");
 
-  await run(
-    ytDlpPath(),
-    [
-      "-f", qualityFormat(quality),
-      "--merge-output-format", "mp4",
-      "--write-thumbnail",
-      "--convert-thumbnails", "jpg",
-      "--ffmpeg-location", path.dirname(ffmpegPath()),
-      "--no-playlist",
-      "--no-warnings",
-      ...await buildCookieArgs(),
-      "-o", outTemplate,
-      job.url,
-    ],
-    {
-      onStderr: (chunk) => {
-        const m = chunk.match(/\[download\]\s+([\d.]+)%.*?at\s+(\S+)\s+ETA\s+(\S+)/);
-        if (m) onProgress(parseFloat(m[1]), m[2], m[3]);
-      },
-    }
-  );
+  try {
+    await run(
+      ytDlpPath(),
+      [
+        "-f", qualityFormat(quality),
+        "--merge-output-format", "mp4",
+        "--write-thumbnail",
+        "--convert-thumbnails", "jpg",
+        "--ffmpeg-location", path.dirname(ffmpegPath()),
+        "--no-playlist",
+        "--no-warnings",
+        ...await buildCookieArgs(),
+        "-o", outTemplate,
+        job.url,
+      ],
+      {
+        onStderr: (chunk) => {
+          const m = chunk.match(/\[download\]\s+([\d.]+)%.*?at\s+(\S+)\s+ETA\s+(\S+)/);
+          if (m) onProgress(parseFloat(m[1]), m[2], m[3]);
+        },
+      }
+    );
+  } catch (err) {
+    throw withInstagramHint(job.url, err);
+  }
 
   // Find the downloaded mp4 and jpg in the temp dir
   const files = readdirSync(tempDir);

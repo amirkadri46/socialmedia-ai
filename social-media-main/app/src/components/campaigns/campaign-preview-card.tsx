@@ -31,6 +31,7 @@ function fmt(iso: string, tz: string) {
 
 export function CampaignPreviewCard({ campaignId, videoCount, accountCount, scheduleRule }: Props) {
   const [preview, setPreview] = useState<CampaignPreview | null>(null);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -39,9 +40,17 @@ export function CampaignPreviewCard({ campaignId, videoCount, accountCount, sche
     }
     const timer = setTimeout(() => {
       setLoading(true);
+      setError("");
       fetch(`/api/campaigns/${campaignId}/preview`)
-        .then((r) => r.json())
-        .then(setPreview)
+        .then(async (r) => {
+          const body = await r.json();
+          if (!r.ok || typeof body.totalJobs !== "number") throw new Error(body.error ?? "Preview failed");
+          setPreview(body);
+        })
+        .catch((e) => {
+          setPreview(null);
+          setError(e instanceof Error ? e.message : "Preview failed");
+        })
         .finally(() => setLoading(false));
     }, 400);
     return () => clearTimeout(timer);
@@ -60,11 +69,15 @@ export function CampaignPreviewCard({ campaignId, videoCount, accountCount, sche
       <p className="text-sm font-semibold">Campaign Preview</p>
       <div className="border-t border-border" />
       {loading || !preview ? (
-        <div className="space-y-2">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-4 w-full" />
-          ))}
-        </div>
+        error ? (
+          <p className="text-sm text-destructive">{error}</p>
+        ) : (
+          <div className="space-y-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-4 w-full" />
+            ))}
+          </div>
+        )
       ) : (
         <div className="text-sm space-y-1.5">
           <Row label="Videos selected" value={videoCount} />

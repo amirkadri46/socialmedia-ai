@@ -118,6 +118,9 @@ export function QueueTable({
                 </TableCell>
                 <TableCell className="max-w-[280px] truncate text-sm" title={job.title || job.url}>
                   {(job.title || job.url).slice(0, 60)}
+                  {job.status === "failed" && job.error && (
+                    <p className="truncate text-[11px] text-red-300" title={job.error}>{job.error}</p>
+                  )}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">{job.quality}</TableCell>
                 <TableCell>

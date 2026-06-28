@@ -10,13 +10,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const { videoId, position } = await req.json().catch(() => ({}));
-  if (typeof videoId !== "string" || !videoId) {
-    return Response.json({ error: "videoId is required." }, { status: 400 });
+  try {
+    const { id } = await params;
+    const { videoId, position } = await req.json().catch(() => ({}));
+    if (typeof videoId !== "string" || !videoId) {
+      return Response.json({ error: "videoId is required." }, { status: 400 });
+    }
+    await campaignRepository.addVideo(id, videoId, typeof position === "number" ? position : 0);
+    return Response.json({ ok: true });
+  } catch (e) {
+    return Response.json({ error: e instanceof Error ? e.message : "Could not add video." }, { status: 400 });
   }
-  await campaignRepository.addVideo(id, videoId, typeof position === "number" ? position : 0);
-  return Response.json({ ok: true });
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {

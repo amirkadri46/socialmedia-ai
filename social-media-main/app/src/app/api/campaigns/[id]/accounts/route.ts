@@ -31,14 +31,18 @@ async function resolveToPublishingAccountId(accountId: string): Promise<string> 
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const { accountId } = await req.json().catch(() => ({}));
-  if (typeof accountId !== "string" || !accountId) {
-    return Response.json({ error: "accountId is required." }, { status: 400 });
+  try {
+    const { id } = await params;
+    const { accountId } = await req.json().catch(() => ({}));
+    if (typeof accountId !== "string" || !accountId) {
+      return Response.json({ error: "accountId is required." }, { status: 400 });
+    }
+    const pubAccountId = await resolveToPublishingAccountId(accountId);
+    await campaignRepository.addAccount(id, pubAccountId);
+    return Response.json({ ok: true });
+  } catch (e) {
+    return Response.json({ error: e instanceof Error ? e.message : "Could not add account." }, { status: 400 });
   }
-  const pubAccountId = await resolveToPublishingAccountId(accountId);
-  await campaignRepository.addAccount(id, pubAccountId);
-  return Response.json({ ok: true });
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {

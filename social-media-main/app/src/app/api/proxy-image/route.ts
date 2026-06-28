@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import dns from "dns";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
+const FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect width="1" height="1" fill="#f1f5f9"/></svg>`;
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -54,7 +55,7 @@ export async function GET(request: Request) {
     }
 
     if (!response.ok) {
-      return new Response(null, { status: response.status });
+      return imageFallback();
     }
 
     // Enforce image content-type before buffering — prevents proxying arbitrary responses.
@@ -76,8 +77,17 @@ export async function GET(request: Request) {
       },
     });
   } catch {
-    return new Response(null, { status: 502 });
+    return imageFallback();
   }
+}
+
+function imageFallback(): Response {
+  return new Response(FALLBACK_SVG, {
+    headers: {
+      "Content-Type": "image/svg+xml",
+      "Cache-Control": "public, max-age=300",
+    },
+  });
 }
 
 /** True for any RFC-1918 / loopback / link-local address (IPv4 and IPv6). */

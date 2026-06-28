@@ -358,8 +358,8 @@ export default function SettingsPage() {
                   (brew / pip / winget) or set <span className="font-mono text-foreground/70">YT_DLP_PATH</span>. ffmpeg is bundled.
                 </div>
                 <Field
-                  label="YouTube cookies browser (local only)"
-                  hint="Reads cookies from a browser installed on the SAME machine. Works locally, but NOT on Railway/servers (no browser there) — use the cookies.txt box below for hosted deploys."
+                  label="yt-dlp cookies browser (local only)"
+                  hint="Reads YouTube/Instagram cookies from a browser installed on the SAME machine. Works locally, but NOT on Railway/servers (no browser there) — use the cookies.txt box below for hosted deploys."
                 >
                   <Select value={ytDlpCookiesBrowser || "none"} onValueChange={(v) => setYtDlpCookiesBrowser(v === "none" ? "" : v)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -374,8 +374,8 @@ export default function SettingsPage() {
                   </Select>
                 </Field>
                 <Field
-                  label="YouTube cookies.txt (works on Railway)"
-                  hint={<>Fixes “Sign in to confirm you’re not a bot” on hosted deploys. Export with a browser extension like <span className="font-mono text-foreground/70">Get cookies.txt LOCALLY</span> while logged into YouTube, then paste the file’s contents here. Takes priority over the browser option above. Treat this like a password — anyone with it can act as your YouTube login.</>}
+                  label="yt-dlp cookies.txt (works on Railway)"
+                  hint={<>Fixes hosted YouTube/Instagram blocks. Export with a browser extension like <span className="font-mono text-foreground/70">Get cookies.txt LOCALLY</span> while logged into the site you are downloading from, then paste the file’s contents here. Takes priority over the browser option above. Treat this like a password.</>}
                 >
                   <Textarea
                     value={ytDlpCookiesText}

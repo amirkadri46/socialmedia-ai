@@ -31,7 +31,7 @@ const FREQUENCY_OPTIONS = [
 ];
 
 const QUICK_START_OPTIONS = [
-  { label: "— Set manually —", value: "" },
+  { label: "Set manually",      value: "_manual" },
   { label: "Right now",        value: "0"  },
   { label: "In 5 minutes",     value: "5"  },
   { label: "In 15 minutes",    value: "15" },
@@ -83,7 +83,7 @@ export function ScheduleRuleEditor({ value, onChange, disabled }: Props) {
   const set = (patch: Partial<ScheduleRule>) => onChange({ ...value, ...patch });
 
   const applyQuickStart = (delayMinStr: string) => {
-    if (!delayMinStr) return;
+    if (delayMinStr === "_manual") return;
     const delayMin = Number(delayMinStr);
     const start = new Date(Date.now() + delayMin * 60 * 1000);
     const hh = String(start.getHours()).padStart(2, "0");
@@ -100,13 +100,13 @@ export function ScheduleRuleEditor({ value, onChange, disabled }: Props) {
       {/* Quick start — spans full width */}
       <div className="col-span-2 space-y-1.5">
         <Label>Quick start</Label>
-        <Select disabled={disabled} value="" onValueChange={applyQuickStart}>
+        <Select disabled={disabled} value="_manual" onValueChange={applyQuickStart}>
           <SelectTrigger>
             <SelectValue placeholder="— Set manually —" />
           </SelectTrigger>
           <SelectContent>
             {QUICK_START_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value} disabled={o.value === ""}>
+              <SelectItem key={o.value} value={o.value}>
                 {o.label}
               </SelectItem>
             ))}

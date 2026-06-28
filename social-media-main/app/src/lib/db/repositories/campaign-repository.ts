@@ -112,7 +112,7 @@ export const campaignRepository = {
   async addAccount(campaignId: string, accountId: string): Promise<void> {
     const { error } = await supabaseServer
       .from("pub_campaign_accounts")
-      .insert({ campaign_id: campaignId, account_id: accountId });
+      .upsert({ campaign_id: campaignId, account_id: accountId });
     if (error) throw new Error(`campaignRepository.addAccount: ${error.message}`);
   },
 

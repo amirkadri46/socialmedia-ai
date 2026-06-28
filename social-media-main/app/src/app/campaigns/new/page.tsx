@@ -24,6 +24,12 @@ const DEFAULT_RULE: ScheduleRule = {
   startDate: new Date().toISOString().split("T")[0],
 };
 
+async function jsonOrError(res: Response, fallback: string) {
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? fallback);
+  return body;
+}
+
 export default function NewCampaignPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -36,6 +42,7 @@ export default function NewCampaignPage() {
 
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   const canNext = [
     name.trim().length > 0,
@@ -47,6 +54,7 @@ export default function NewCampaignPage() {
   // For preview card we need a campaign id — create a temp one on step 3→4 transition
   const handleNextFromAccounts = async () => {
     setSaving(true);
+    setError("");
     try {
       const res = await fetch("/api/campaigns", {
         method: "POST",
@@ -58,24 +66,29 @@ export default function NewCampaignPage() {
           timezone: rule.timezone,
         }),
       });
-      const campaign = await res.json();
+      const campaign = await jsonOrError(res, "Could not create campaign");
+      if (!campaign.id) throw new Error("Could not create campaign");
       setCreatedId(campaign.id);
       // Associate videos & accounts eagerly so preview has real data
       for (let i = 0; i < selectedVideoIds.length; i++) {
-        await fetch(`/api/campaigns/${campaign.id}/videos`, {
+        const res = await fetch(`/api/campaigns/${campaign.id}/videos`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ videoId: selectedVideoIds[i], position: i }),
         });
+        await jsonOrError(res, "Could not add video");
       }
       for (const accountId of selectedAccountIds) {
-        await fetch(`/api/campaigns/${campaign.id}/accounts`, {
+        const res = await fetch(`/api/campaigns/${campaign.id}/accounts`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ accountId }),
         });
+        await jsonOrError(res, "Could not add account");
       }
       setStep(3);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create campaign");
     } finally {
       setSaving(false);
     }
@@ -174,6 +187,7 @@ export default function NewCampaignPage() {
       )}
 
       {/* Navigation */}
+      {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex justify-between pt-2">
         <Button variant="outline" onClick={() => setStep((s) => s - 1)} disabled={step === 0 || saving}>
           ← Back
