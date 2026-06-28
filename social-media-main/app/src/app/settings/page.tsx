@@ -210,8 +210,8 @@ export default function SettingsPage() {
         metaAppSecret: p.metaAppSecret || !!metaAppSecret,
       }));
       setTimeout(() => setSaved(false), 2000);
-    } catch {
-      alert("Failed to save settings");
+    } catch (err) {
+      alert(`Failed to save settings: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setLoading(false);
     }
