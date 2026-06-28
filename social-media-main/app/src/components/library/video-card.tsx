@@ -54,6 +54,15 @@ export const VideoCard = memo(function VideoCard({ video, onPreview }: VideoCard
           loading="lazy"
           decoding="async"
         />
+      ) : video.fallback_video_url ? (
+        // Existing Instagram rows may predate thumbnail ingest; show the first frame instead of a blank tile.
+        <video
+          src={`${video.fallback_video_url}#t=0.1`}
+          className="w-full h-full object-cover"
+          preload="metadata"
+          muted
+          playsInline
+        />
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-zinc-800">
           <Film className="h-8 w-8 text-zinc-600" />

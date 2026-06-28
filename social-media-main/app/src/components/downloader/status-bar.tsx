@@ -17,6 +17,7 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 export function StatusBar({ jobs }: { jobs: DownloadJob[] }) {
   const downloaded = jobs.filter((j) => j.status === "completed").length;
   const failed = jobs.filter((j) => j.status === "failed").length;
+  const paused = jobs.filter((j) => j.status === "paused").length;
   const remaining = jobs.filter((j) => ACTIVE.has(j.status)).length;
 
   // speed strings look like "1.2MiB/s" / "1.2 MB/s" — sum the leading number.
@@ -36,6 +37,8 @@ export function StatusBar({ jobs }: { jobs: DownloadJob[] }) {
       <Stat label="Failed" value={failed} />
       <Separator orientation="vertical" className="h-4" />
       <Stat label="Remaining" value={remaining} />
+      <Separator orientation="vertical" className="h-4" />
+      <Stat label="Paused" value={paused} />
       <Separator orientation="vertical" className="h-4" />
       <Stat label="Speed" value={totalSpeed > 0 ? `${totalSpeed.toFixed(1)} MB/s total` : "—"} />
     </div>

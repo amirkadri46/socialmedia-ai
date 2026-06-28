@@ -43,7 +43,7 @@ export interface RunResult {
 export function run(
   bin: string,
   args: string[],
-  opts: { onStderr?: (chunk: string) => void; cwd?: string } = {}
+  opts: { onStderr?: (chunk: string) => void; cwd?: string; signal?: AbortSignal } = {}
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     let proc;
@@ -53,6 +53,15 @@ export function run(
       reject(err);
       return;
     }
+    const abort = () => {
+      proc.kill();
+      reject(new Error("Cancelled"));
+    };
+    if (opts.signal?.aborted) {
+      abort();
+      return;
+    }
+    opts.signal?.addEventListener("abort", abort, { once: true });
     let stdout = "";
     let stderr = "";
     proc.stdout.on("data", (d) => {
@@ -71,6 +80,8 @@ export function run(
       );
     });
     proc.on("close", (code, signal) => {
+      opts.signal?.removeEventListener("abort", abort);
+      if (opts.signal?.aborted) return;
       if (code === 0) resolve({ stdout, stderr });
       else if (code === null) {
         // A null exit code means the process was terminated by a signal rather than

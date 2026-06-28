@@ -8,6 +8,8 @@ class QueueRunner {
   // In-memory live state (richer than disk — includes real-time progress)
   private liveJobs = new Map<string, DownloadJob>();
   private running = new Set<string>();
+  private controllers = new Map<string, AbortController>();
+  private stopped = new Map<string, "paused" | "cancelled">();
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   // Cache the on-disk snapshot so GET /api/downloader/queue doesn't re-read the file every 2 s.
   private diskCache: DownloadJob[] | null = null;
@@ -23,7 +25,8 @@ class QueueRunner {
         j.status === "waiting" ||
         j.status === "retrying" ||
         j.status === "inspecting" ||
-        j.status === "downloading";
+        j.status === "downloading" ||
+        j.status === "uploading";
       this.liveJobs.set(
         j.id,
         transient ? { ...j, status: "waiting", progress: 0, speed: "", eta: "" } : j
@@ -49,6 +52,8 @@ class QueueRunner {
   private async processJob(job: DownloadJob, settings: DownloaderSettings) {
     if (this.running.has(job.id)) return;
     this.running.add(job.id);
+    const controller = new AbortController();
+    this.controllers.set(job.id, controller);
 
     try {
       // Phase 1: inspect (title/creator/thumbnail) if unknown.
@@ -64,9 +69,11 @@ class QueueRunner {
       const { videoPath, thumbPath } = await downloadSingleJob(
         this.getJob(job.id)!,
         settings.quality,
-        (progress, speed, eta) => this.patch(job.id, { progress, speed, eta })
+        (progress, speed, eta) => this.patch(job.id, { progress, speed, eta }),
+        controller.signal
       );
 
+      if (controller.signal.aborted) throw new Error("Cancelled");
       this.patch(job.id, { status: "uploading", progress: 100 });
 
       // Phase 3: ingest (upload to R2 + register in Supabase).
@@ -105,6 +112,18 @@ class QueueRunner {
       upsertJob(this.getJob(job.id)!);
       this.diskCache = null;
     } catch (err) {
+      const stopped = this.stopped.get(job.id);
+      if (stopped) {
+        this.patch(job.id, {
+          status: stopped,
+          speed: "",
+          eta: "",
+          error: stopped === "cancelled" ? "Cancelled by user" : "",
+        });
+        upsertJob(this.getJob(job.id)!);
+        this.diskCache = null;
+        return;
+      }
       const current = this.getJob(job.id)!;
       if (current.retryCount < settings.retryCount) {
         this.patch(job.id, {
@@ -119,6 +138,8 @@ class QueueRunner {
       this.diskCache = null;
     } finally {
       this.running.delete(job.id);
+      this.controllers.delete(job.id);
+      this.stopped.delete(job.id);
     }
   }
 
@@ -181,21 +202,44 @@ class QueueRunner {
   cancelJob(id: string) {
     const job = this.getJob(id);
     if (!job) return;
-    if (job.status === "failed" || job.status === "completed") {
+    if (job.status === "failed" || job.status === "completed" || job.status === "cancelled") {
       this.liveJobs.delete(id);
       removeJob(id);
       this.diskCache = null;
       return;
     }
-    // ponytail: can't kill the yt-dlp child cleanly; cancel = mark failed.
-    this.patch(id, { status: "failed", error: "Cancelled by user" });
+    this.stopped.set(id, "cancelled");
+    this.controllers.get(id)?.abort();
+    this.patch(id, { status: "cancelled", speed: "", eta: "", error: "Cancelled by user" });
     upsertJob(this.getJob(id)!);
     this.diskCache = null;
+  }
+
+  pauseJob(id: string) {
+    const job = this.getJob(id);
+    if (!job || job.status === "completed" || job.status === "failed" || job.status === "cancelled") return;
+    this.stopped.set(id, "paused");
+    this.controllers.get(id)?.abort();
+    this.patch(id, { status: "paused", speed: "", eta: "" });
+    upsertJob(this.getJob(id)!);
+    this.diskCache = null;
+  }
+
+  resumeJob(id: string) {
+    const job = this.getJob(id);
+    if (!job || job.status !== "paused") return;
+    if (this.running.has(id)) return;
+    this.stopped.delete(id);
+    this.patch(id, { status: "waiting", progress: 0, speed: "", eta: "", error: "" });
+    upsertJob(this.getJob(id)!);
+    this.diskCache = null;
+    this.tick();
   }
 
   clearFinished() {
     const active = this.getAllJobs().filter(
       (j) => j.status !== "completed" && j.status !== "failed"
+        && j.status !== "cancelled"
     );
     this.liveJobs = new Map(active.map((j) => [j.id, j]));
     writeQueue(active);

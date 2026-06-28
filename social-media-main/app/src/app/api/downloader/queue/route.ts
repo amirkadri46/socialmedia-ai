@@ -34,3 +34,11 @@ export async function DELETE(request: Request) {
   else queueRunner.clearFinished();
   return Response.json({ ok: true });
 }
+
+export async function PATCH(request: Request) {
+  queueRunner.ensureStarted();
+  const body = await request.json().catch(() => ({}));
+  if (body.action === "pause") queueRunner.pauseJob(body.jobId);
+  if (body.action === "resume") queueRunner.resumeJob(body.jobId);
+  return Response.json({ ok: true });
+}

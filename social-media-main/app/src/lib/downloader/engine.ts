@@ -48,6 +48,16 @@ function getTempDir(jobId: string): string {
 export async function inspectUrl(
   url: string
 ): Promise<{ title: string; creator: string; thumbnail: string; platform: DownloadPlatform }> {
+  const platform = detectPlatform(url);
+  const reel = platform === "instagram" ? await scrapeInstagram(url) : null;
+  if (reel?.videoUrl) {
+    return {
+      title: url,
+      creator: reel.ownerUsername || "Instagram",
+      thumbnail: reel.displayUrl || reel.images?.[0] || "",
+      platform: "instagram",
+    };
+  }
   if (!(await ytDlpAvailable())) {
     throw new Error("yt-dlp is not installed. Install it or set YT_DLP_PATH.");
   }
@@ -61,15 +71,6 @@ export async function inspectUrl(
       url,
     ]));
   } catch (err) {
-    const reel = await scrapeInstagram(url);
-    if (reel?.videoUrl) {
-      return {
-        title: url,
-        creator: reel.ownerUsername || "Instagram",
-        thumbnail: reel.displayUrl || reel.images?.[0] || "",
-        platform: "instagram",
-      };
-    }
     throw withInstagramHint(url, err);
   }
   const json = JSON.parse(stdout);
@@ -77,20 +78,37 @@ export async function inspectUrl(
     title: json.title || "Untitled",
     creator: json.uploader || json.channel || json.uploader_id || "Unknown",
     thumbnail: json.thumbnail || "",
-    platform: detectPlatform(url),
+    platform,
   };
+}
+
+async function downloadUrl(url: string, filePath: string, signal?: AbortSignal) {
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`Download failed ${response.status}`);
+  writeFileSync(filePath, Buffer.from(await response.arrayBuffer()));
 }
 
 export async function downloadSingleJob(
   job: { url: string; platform: DownloadPlatform; id: string },
   quality: DownloadQuality,
-  onProgress: (progress: number, speed: string, eta: string) => void
+  onProgress: (progress: number, speed: string, eta: string) => void,
+  signal?: AbortSignal
 ): Promise<{ videoPath: string; thumbPath: string | null }> {
+  const tempDir = getTempDir(job.id);
+  const outTemplate = path.join(tempDir, "%(title)s.%(ext)s");
+  const reel = job.platform === "instagram" ? await scrapeInstagram(job.url) : null;
+  if (reel?.videoUrl) {
+    const videoPath = path.join(tempDir, "instagram.mp4");
+    const thumbUrl = reel.displayUrl || reel.images?.[0];
+    const thumbPath = thumbUrl ? path.join(tempDir, "instagram.jpg") : null;
+    await downloadUrl(reel.videoUrl, videoPath, signal);
+    if (thumbUrl && thumbPath) await downloadUrl(thumbUrl, thumbPath, signal).catch(() => {});
+    onProgress(100, "", "");
+    return { videoPath, thumbPath };
+  }
   if (!(await ytDlpAvailable())) {
     throw new Error("yt-dlp is not installed. Install it or set YT_DLP_PATH.");
   }
-  const tempDir = getTempDir(job.id);
-  const outTemplate = path.join(tempDir, "%(title)s.%(ext)s");
 
   try {
     await run(
@@ -112,17 +130,10 @@ export async function downloadSingleJob(
           const m = chunk.match(/\[download\]\s+([\d.]+)%.*?at\s+(\S+)\s+ETA\s+(\S+)/);
           if (m) onProgress(parseFloat(m[1]), m[2], m[3]);
         },
+        signal,
       }
     );
   } catch (err) {
-    const reel = job.platform === "instagram" ? await scrapeInstagram(job.url) : null;
-    if (reel?.videoUrl) {
-      const response = await fetch(reel.videoUrl);
-      if (!response.ok) throw withInstagramHint(job.url, err);
-      const videoPath = path.join(tempDir, "instagram.mp4");
-      writeFileSync(videoPath, Buffer.from(await response.arrayBuffer()));
-      return { videoPath, thumbPath: null };
-    }
     throw withInstagramHint(job.url, err);
   }
 

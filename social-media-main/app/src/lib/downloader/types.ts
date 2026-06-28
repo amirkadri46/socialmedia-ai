@@ -5,7 +5,9 @@ export type DownloadStatus =
   | "uploading"
   | "completed"
   | "failed"
-  | "retrying";
+  | "retrying"
+  | "paused"
+  | "cancelled";
 
 export type DownloadPlatform = "youtube" | "instagram" | "unknown";
 export type DownloadQuality = "best" | "1080p" | "720p";

@@ -89,6 +89,15 @@ export default function DownloaderPage() {
       .then((r) => r.json())
       .then(setJobs);
 
+  const patchJob = (id: string, action: "pause" | "resume") =>
+    fetch("/api/downloader/queue", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId: id, action }),
+    }).then(() => fetch("/api/downloader/queue"))
+      .then((r) => r.json())
+      .then(setJobs);
+
   const clearFinished = () =>
     fetch("/api/downloader/queue", {
       method: "DELETE",
@@ -124,7 +133,7 @@ export default function DownloaderPage() {
         </CardContent>
       </Card>
 
-      <QueueTable jobs={jobs} onCancel={cancel} onClearFinished={clearFinished} />
+      <QueueTable jobs={jobs} onCancel={cancel} onPause={(id) => patchJob(id, "pause")} onResume={(id) => patchJob(id, "resume")} onClearFinished={clearFinished} />
 
       <StatusBar jobs={jobs} />
     </div>

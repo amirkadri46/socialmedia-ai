@@ -12,6 +12,7 @@ export interface VideoWithUrls {
   storage_status: string;
   downloaded_at: string;
   thumbnail_url: string | null;
+  fallback_video_url: string | null;
 }
 
 export interface VideoDetail extends VideoWithUrls {
@@ -24,16 +25,20 @@ export const videoLibraryService = {
     const storage = getStorageProvider();
     const videos = await videoRepository.findAll(filters);
     const thumbObjects = await storageObjectRepository.findByIds(
-      videos.map((v) => v.thumbnail_object_id).filter(Boolean) as string[]
+      videos.flatMap((v) => [v.thumbnail_object_id, v.thumbnail_object_id ? null : v.storage_object_id]).filter(Boolean) as string[]
     );
-    const thumbKeys = new Map(thumbObjects.map((obj) => [obj.id, obj.key]));
+    const objectKeys = new Map(thumbObjects.map((obj) => [obj.id, obj.key]));
 
     return Promise.all(
       videos.map(async (v) => {
         let thumbnail_url: string | null = null;
+        let fallback_video_url: string | null = null;
         if (v.thumbnail_object_id) {
-          const key = thumbKeys.get(v.thumbnail_object_id);
+          const key = objectKeys.get(v.thumbnail_object_id);
           if (key) thumbnail_url = await storage.getSignedUrl(key, 3600);
+        } else if (v.storage_object_id) {
+          const key = objectKeys.get(v.storage_object_id);
+          if (key) fallback_video_url = await storage.getSignedUrl(key, 3600);
         }
         return {
           id: v.id,
@@ -45,6 +50,7 @@ export const videoLibraryService = {
           storage_status: v.storage_status,
           downloaded_at: v.downloaded_at,
           thumbnail_url,
+          fallback_video_url,
         };
       })
     );
@@ -84,6 +90,7 @@ export const videoLibraryService = {
       storage_status: video.storage_status,
       downloaded_at: video.downloaded_at,
       thumbnail_url,
+      fallback_video_url: video_url || null,
       video_url,
       captions: captions.map((c) => ({ platform: c.platform, language: c.language, caption: c.caption })),
     };

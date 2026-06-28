@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, X, Loader2 } from "lucide-react";
+import { Download, X, Loader2, Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -38,6 +38,10 @@ function StatusBadge({ job }: { job: DownloadJob }) {
       );
     case "completed":
       return <Badge className="bg-green-500/15 text-green-300 hover:bg-green-500/15">Done</Badge>;
+    case "paused":
+      return <Badge className="bg-yellow-500/15 text-yellow-300 hover:bg-yellow-500/15">Paused</Badge>;
+    case "cancelled":
+      return <Badge className="bg-zinc-500/15 text-zinc-300 hover:bg-zinc-500/15">Cancelled</Badge>;
     case "retrying":
       return (
         <Badge className="bg-orange-500/15 text-orange-300 hover:bg-orange-500/15">
@@ -63,10 +67,14 @@ function StatusBadge({ job }: { job: DownloadJob }) {
 export function QueueTable({
   jobs,
   onCancel,
+  onPause,
+  onResume,
   onClearFinished,
 }: {
   jobs: DownloadJob[];
   onCancel: (id: string) => void;
+  onPause: (id: string) => void;
+  onResume: (id: string) => void;
   onClearFinished: () => void;
 }) {
   if (jobs.length === 0) {
@@ -96,7 +104,7 @@ export function QueueTable({
               <TableHead className="w-[72px]">Quality</TableHead>
               <TableHead className="w-[180px]">Progress</TableHead>
               <TableHead className="w-[110px]">Status</TableHead>
-              <TableHead className="w-[48px]"></TableHead>
+              <TableHead className="w-[84px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -136,8 +144,17 @@ export function QueueTable({
                   )}
                 </TableCell>
                 <TableCell><StatusBadge job={job} /></TableCell>
-                <TableCell>
-                  {job.status !== "completed" && (
+                <TableCell className="flex gap-1">
+                  {job.status === "paused" ? (
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onResume(job.id)} title="Resume">
+                      <Play className="h-4 w-4" />
+                    </Button>
+                  ) : !["completed", "failed", "cancelled"].includes(job.status) ? (
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onPause(job.id)} title="Pause">
+                      <Pause className="h-4 w-4" />
+                    </Button>
+                  ) : null}
+                  {job.status !== "completed" && job.status !== "cancelled" && (
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCancel(job.id)}>
                       <X className="h-4 w-4" />
                     </Button>
