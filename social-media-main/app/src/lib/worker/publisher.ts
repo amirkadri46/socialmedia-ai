@@ -8,7 +8,7 @@ const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 15 * 60 * 1000;
 const JOBS_PER_TICK = 5;
 // Jobs stuck in intermediate states longer than this are considered orphaned (crash recovery)
-const STALE_JOB_THRESHOLD_MS = 15 * 60 * 1000;
+const STALE_JOB_THRESHOLD_MS = 2 * 60 * 1000;
 let tickRunning = false;
 const activeJobs = new Set<string>();
 
@@ -99,7 +99,7 @@ async function processJob(job: PublisherJob): Promise<void> {
   activeJobs.add(job.id);
   try {
   // Atomic claim — only one worker wins; distinguish a lost race from a DB error (finding #2)
-  const { count, error: claimError } = await supabase
+  const { data: claimedRows, error: claimError } = await supabase
     .from("pub_upload_jobs")
     .update({
       status: "preparing",
@@ -109,15 +109,14 @@ async function processJob(job: PublisherJob): Promise<void> {
     .eq("id", job.id)
     .eq("status", "queued")
     .is("claimed_by", null)
-    // @ts-expect-error supabase-js types omit the count option on a post-update .select(); valid at runtime
-    .select("id", { count: "exact", head: true });
+    .select("id");
 
   if (claimError) {
     console.error(`[Publisher] Claim DB error for job ${job.id}:`, claimError);
     return;
   }
-  if (!count || count === 0) {
-    console.log(`[Publisher] Job ${job.id} already claimed by another worker — skipping`);
+  if (!claimedRows?.length) {
+    console.log(`[Publisher] Job ${job.id} already claimed by another worker - skipping`);
     return;
   }
   if (job.campaign_id) {
