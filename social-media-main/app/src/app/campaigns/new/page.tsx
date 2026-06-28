@@ -25,8 +25,14 @@ const DEFAULT_RULE: ScheduleRule = {
 };
 
 async function jsonOrError(res: Response, fallback: string) {
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error ?? fallback);
+  const text = await res.text();
+  let body: Record<string, unknown> = {};
+  try { body = JSON.parse(text); } catch { /* non-JSON (e.g. 500 page) */ }
+  if (!res.ok) {
+    // Surface the real reason; fall back to status + raw body when the
+    // response isn't JSON (a crash page swallowed the error otherwise).
+    throw new Error((body.error as string) ?? `${fallback} (HTTP ${res.status}: ${text.slice(0, 300)})`);
+  }
   return body;
 }
 
