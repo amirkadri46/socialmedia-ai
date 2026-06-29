@@ -17,14 +17,12 @@ const SECRET_FIELDS = [
 
 export async function GET() {
   const settings = await repos.settings.get();
-  // Never return plaintext secrets — return boolean presence flags instead.
-  // The client only needs to know whether a key is configured, not its value.
-  const redacted: Record<string, unknown> = { ...settings, secretPresence: {} };
-  for (const field of SECRET_FIELDS) {
-    (redacted.secretPresence as Record<string, boolean>)[field] = Boolean(settings[field]);
-    redacted[field] = "";
-  }
-  return NextResponse.json(redacted);
+  // Single-user self-hosted tool: return the saved secret values so the Settings
+  // fields repopulate after refresh (the owner entered them in the first place).
+  // secretPresence is still included so the UI's "Saved" hint keeps working.
+  const presence: Record<string, boolean> = {};
+  for (const field of SECRET_FIELDS) presence[field] = Boolean(settings[field]);
+  return NextResponse.json({ ...settings, secretPresence: presence });
 }
 
 export async function POST(req: Request) {

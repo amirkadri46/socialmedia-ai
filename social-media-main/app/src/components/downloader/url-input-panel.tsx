@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,6 +22,14 @@ export function UrlInputPanel({
   const [text, setText] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const count = parseUrls(text).length;
+
+  // Persist the pasted URLs so a page refresh doesn't lose them.
+  useEffect(() => {
+    setText(localStorage.getItem("downloader:urls") ?? "");
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("downloader:urls", text);
+  }, [text]);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

@@ -19,6 +19,12 @@ function withInstagramHint(url: string, err: unknown): Error {
   return new Error(`${message} Instagram downloads usually need fresh instagram.com cookies in Settings > Clipping, or YTDLP_COOKIES_TEXT on Railway.`);
 }
 
+function instagramScrapeError(): Error {
+  return new Error(
+    "Couldn't fetch this Instagram Reel via Apify. Check your Apify API token in Settings and that the Reel is public. (yt-dlp fallback is disabled for Instagram.)"
+  );
+}
+
 async function scrapeInstagram(url: string) {
   try {
     return await scrapeVideoByUrl(url);
@@ -58,6 +64,9 @@ export async function inspectUrl(
       platform: "instagram",
     };
   }
+  // Instagram is Apify-only — yt-dlp just hits IG's login wall, so fail clearly
+  // instead of falling back to it.
+  if (platform === "instagram") throw instagramScrapeError();
   if (!(await ytDlpAvailable())) {
     throw new Error("yt-dlp is not installed. Install it or set YT_DLP_PATH.");
   }
@@ -106,6 +115,7 @@ export async function downloadSingleJob(
     onProgress(100, "", "");
     return { videoPath, thumbPath };
   }
+  if (job.platform === "instagram") throw instagramScrapeError();
   if (!(await ytDlpAvailable())) {
     throw new Error("yt-dlp is not installed. Install it or set YT_DLP_PATH.");
   }
