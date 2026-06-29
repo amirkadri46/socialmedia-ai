@@ -1,10 +1,11 @@
 import { v4 as uuid } from "uuid";
-import { copyFileSync, existsSync } from "fs";
+import { copyFileSync, existsSync, statSync } from "fs";
 import { downloadVideo, saveUpload } from "./download";
 import { transcribe, wordsToText } from "./transcribe";
 import { selectMoments, clipLengthRange } from "./moments";
 import { renderClip } from "./render";
 import { persistentSourcePath } from "./store";
+import { usingSupabaseStorage, uploadClipFile } from "./storage";
 import { repos } from "../db";
 import type { ClipJob, ClipProgress, Clip, Moment, Word } from "../types";
 
@@ -13,6 +14,25 @@ import type { ClipJob, ClipProgress, Clip, Moment, Word } from "../types";
 // gets ffmpeg SIGKILLed mid-encode (surfaces as "ffmpeg exited null"). Bump this
 // via CLIP_RENDER_CONCURRENCY on a host with more RAM.
 const RENDER_CONCURRENCY = Math.max(1, parseInt(process.env.CLIP_RENDER_CONCURRENCY || "1", 10) || 1);
+
+/**
+ * Human-readable message from any throwable. Supabase repos throw PostgrestError *objects*
+ * (not Error instances), so `err instanceof Error` alone reduces real DB/storage failures to
+ * a useless "Unknown error" — this digs out the actual message.
+ */
+export function errMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object") {
+    const m = (err as { message?: unknown }).message;
+    if (typeof m === "string" && m) return m;
+    // Don't serialize the whole object into a user-facing message — it can leak
+    // internal/connection details. Log the raw error for server-side debugging instead.
+    console.error("[clip-pipeline] Non-Error thrown:", err);
+    return "Unexpected error";
+  }
+  if (typeof err === "string" && err) return err;
+  return "Unknown error";
+}
 
 /** Thrown internally when a job is canceled so the pipeline unwinds cleanly. */
 class CanceledError extends Error {
@@ -147,6 +167,24 @@ export async function runClipPipeline(
     if (!existsSync(pSrc)) {
       try { copyFileSync(sourcePath, pSrc); } catch { /* non-fatal — temp path still usable for this session */ }
     }
+    // In supabase mode the editor's source video is served from the clip-sources bucket.
+    // Skip the upload for large sources: it would read the whole (multi-GB) file into
+    // memory and fail anyway on Supabase's per-file limit — wasting time + memory on the
+    // hot path. The clips (the product) are uploaded per-clip below regardless; only the
+    // editor's full-source scrubbing is unavailable for very long videos.
+    if (usingSupabaseStorage()) {
+      const maxMb = parseInt(process.env.CLIP_SOURCE_UPLOAD_MAX_MB || "100", 10) || 100;
+      const sizeMb = statSync(sourcePath).size / (1024 * 1024);
+      if (sizeMb > maxMb) {
+        log(`Source too large for editor playback (${Math.round(sizeMb)} MB > ${maxMb} MB) — skipped; clips still render.`);
+      } else {
+        try {
+          await uploadClipFile("clip-sources", `${job.id}.mp4`, sourcePath, "video/mp4");
+        } catch (err) {
+          log(`Warning: could not upload source for the editor: ${errMessage(err)}`);
+        }
+      }
+    }
 
     const rangeEnd = job.rangeEndSec > 0 ? job.rangeEndSec : job.sourceDurationSec;
     progress.rangeLabel = `From ${fmtClock(job.rangeStartSec)} to ${fmtClock(rangeEnd)}, preferred clip length of ${min}-${max}s...`;
@@ -159,7 +197,18 @@ export async function runClipPipeline(
     await setStatus("transcribing", 25);
     log("Transcribing audio...");
     const langCode = languageCode(job.speechLanguage);
-    const words: Word[] = await transcribe(sourcePath, langCode);
+    // Transcription is one long await with no sub-progress, so the bar sits at 25% and
+    // looks frozen. Emit a heartbeat every 15s so the user sees it's still working.
+    const tStart = Date.now();
+    const heartbeat = setInterval(() => {
+      log(`Transcribing audio… still working (${Math.round((Date.now() - tStart) / 1000)}s)`);
+    }, 15_000);
+    let words: Word[];
+    try {
+      words = await transcribe(sourcePath, langCode);
+    } finally {
+      clearInterval(heartbeat);
+    }
     await repos.clipTranscripts.write(job.id, words); // persist for the clip editor (Phase 2)
     log(`Transcribed ${words.length} words.`);
 
@@ -188,6 +237,14 @@ export async function runClipPipeline(
           clipId,
           () => {}
         );
+        // In supabase mode the rendered files live on ephemeral local disk; upload them
+        // and store the bucket object keys so the media/thumb/download routes resolve.
+        let storedFile = filePath;
+        let storedThumb = thumbnail;
+        if (usingSupabaseStorage()) {
+          storedFile = await uploadClipFile("clips", `${clipId}.mp4`, filePath, "video/mp4");
+          if (thumbnail) storedThumb = await uploadClipFile("clip-thumbnails", `${clipId}.jpg`, thumbnail, "image/jpeg");
+        }
         const clip: Clip = {
           id: clipId,
           jobId: job.id,
@@ -202,8 +259,8 @@ export async function runClipPipeline(
           genre: moment.genre,
           reason: moment.reason,
           transcript: wordsToText(words, moment.start, moment.end),
-          filePath,
-          thumbnail,
+          filePath: storedFile,
+          thumbnail: storedThumb,
           caption: "",
           starred: false,
           createdAt: new Date().toISOString(),
@@ -214,7 +271,9 @@ export async function runClipPipeline(
         log(`Rendered clip ${produced.length}/${moments.length}: ${moment.title} (${moment.score})`);
       } catch (err) {
         if (err instanceof CanceledError) throw err; // propagate; don't swallow as a render error
-        const msg = `Render error for "${moment.title}": ${err instanceof Error ? err.message : err}`;
+        // errMessage handles non-Error throwables (e.g. Supabase upload errors) so this never
+        // records "[object Object]" in progress.errors.
+        const msg = `Render error for "${moment.title}": ${errMessage(err)}`;
         progress.errors.push(msg);
         log(msg);
       }
@@ -238,7 +297,7 @@ export async function runClipPipeline(
       await setStatus("canceled", progress.percent);
       log("Canceled by user.");
     } else {
-      const msg = err instanceof Error ? err.message : "Unknown error";
+      const msg = errMessage(err);
       progress.errors.push(msg);
       job.errors = [...new Set([...(job.errors || []), ...progress.errors])];
       await setStatus("error", progress.percent);

@@ -5,9 +5,13 @@ import { DEFAULT_SHORTCUTS, type EditorShortcuts } from "./clip/shortcuts";
 const DATA_DIR = path.join(process.cwd(), "..", "data");
 const SETTINGS_PATH = path.join(DATA_DIR, "settings.json");
 
+/** Server-side allow-list for the OpenAI model field (mirrors the Settings UI options). */
+export const ALLOWED_OPENAI_MODELS = ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "o4-mini"] as const;
+
 export interface AppSettings {
   provider: "openai" | "openrouter";
   openaiApiKey: string;
+  openaiModel: string;
   openrouterApiKey: string;
   openrouterModel: string;
   geminiModel: string;
@@ -39,6 +43,7 @@ export interface AppSettings {
 const DEFAULTS: AppSettings = {
   provider: "openrouter",
   openaiApiKey: "",
+  openaiModel: "gpt-4o",
   openrouterApiKey: "",
   openrouterModel: "deepseek/deepseek-v4-flash",
   geminiModel: "gemini-2.5-flash",

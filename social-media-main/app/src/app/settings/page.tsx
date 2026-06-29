@@ -25,6 +25,14 @@ const GEMINI_MODELS = [
   { value: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite", note: "Most cost-effective · audio, video, image, text" },
 ];
 
+const OPENAI_MODELS = [
+  { value: "gpt-4o", label: "GPT-4o" },
+  { value: "gpt-4o-mini", label: "GPT-4o mini" },
+  { value: "gpt-4.1", label: "GPT-4.1" },
+  { value: "gpt-4.1-mini", label: "GPT-4.1 mini" },
+  { value: "o4-mini", label: "o4-mini" },
+];
+
 const OPENROUTER_MODELS = [
   { value: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash" },
   { value: "openrouter/owl-alpha", label: "OpenRouter Owl Alpha" },
@@ -113,6 +121,7 @@ export default function SettingsPage() {
   const [active, setActive] = useState<SectionId>("ai");
   const [provider, setProvider] = useState<Provider>("openrouter");
   const [openaiKey, setOpenaiKey] = useState("");
+  const [openaiModel, setOpenaiModel] = useState("gpt-4o");
   const [openrouterKey, setOpenrouterKey] = useState("");
   const [openrouterModel, setOpenrouterModel] = useState("deepseek/deepseek-v4-flash");
   const [geminiModel, setGeminiModel] = useState("gemini-2.0-flash");
@@ -150,6 +159,7 @@ export default function SettingsPage() {
       .then((s) => {
         setProvider(s.provider ?? "openrouter");
         setOpenaiKey(s.openaiApiKey ?? "");
+        setOpenaiModel(s.openaiModel ?? "gpt-4o");
         setOpenrouterKey(s.openrouterApiKey ?? "");
         setOpenrouterModel(s.openrouterModel ?? "deepseek/deepseek-v4-flash");
         setGeminiModel(s.geminiModel ?? "gemini-2.0-flash");
@@ -183,7 +193,7 @@ export default function SettingsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          provider, openaiApiKey: openaiKey, openrouterApiKey: openrouterKey, openrouterModel, geminiModel,
+          provider, openaiApiKey: openaiKey, openaiModel, openrouterApiKey: openrouterKey, openrouterModel, geminiModel,
           apifyApiToken: apifyToken, linkedinCharLimit, emailLengthGuidance,
           whatsappCharLimit, senderName, defaultLocationLabel,
           transcriptionProvider, deepgramApiKey, assemblyaiApiKey,
@@ -270,8 +280,20 @@ export default function SettingsPage() {
 
                 <div className={`space-y-4 rounded-lg border p-4 ${provider === "openai" ? "" : "opacity-60"}`}>
                   <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">OpenAI — Direct</p>
-                  <Field label="API Key" hint={<>Model: <span className="font-mono text-foreground/70">gpt-4o</span> (fixed)</>}>
+                  <Field label="API Key" hint={<>Get your key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">platform.openai.com/api-keys</a></>}>
                     <KeyInput value={openaiKey} onChange={setOpenaiKey} placeholder="sk-..." saved={secretPresence.openaiApiKey} />
+                  </Field>
+                  <Field label="Model">
+                    <Select value={openaiModel} onValueChange={setOpenaiModel}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {OPENAI_MODELS.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>
+                            <div><p className="text-sm font-medium">{m.label}</p><p className="font-mono text-[11px] text-muted-foreground">{m.value}</p></div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </Field>
                 </div>
 

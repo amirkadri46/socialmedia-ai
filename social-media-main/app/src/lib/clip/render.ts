@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, copyFileSync } from "fs";
 import path from "path";
-import { ffmpeg } from "./ffmpeg";
+import { ffmpeg, videoEncodeArgs } from "./ffmpeg";
 import { buildAssFile } from "./captions";
 import { clipMediaDir } from "./store";
 import type { Word, Moment, ClipJob } from "../types";
@@ -65,10 +65,8 @@ export async function renderClip(
       // memory cost, and uncapped threads on a small container can OOM-kill ffmpeg.
       "-threads", process.env.CLIP_FFMPEG_THREADS || "2",
       "-vf", filters.join(","),
-      "-c:v", "libx264",
-      "-preset", "veryfast",
-      "-crf", "20",
-      "-pix_fmt", "yuv420p",
+      // CPU libx264 by default; set CLIP_VIDEO_ENCODER=h264_nvenc to encode on an NVIDIA GPU.
+      ...videoEncodeArgs(),
       "-c:a", "aac",
       "-b:a", "128k",
       "-movflags", "+faststart",

@@ -16,6 +16,8 @@ import {
   Sparkles,
   X,
   ArrowLeft,
+  Trash2,
+  Check,
 } from "lucide-react";
 import type { Clip, ClipJob } from "@/lib/types";
 
@@ -35,6 +37,23 @@ export default function JobResultsPage() {
   const [loading, setLoading] = useState(true);
   const [scheduleClip, setScheduleClip] = useState<Clip | null>(null);
   const [hookDismissed, setHookDismissed] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const exitSelect = useCallback(() => {
+    setSelectMode(false);
+    setSelected(new Set());
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -59,6 +78,26 @@ export default function JobResultsPage() {
     const t = setInterval(load, 3000);
     return () => clearInterval(t);
   }, [job, load]);
+
+  const deleteSelected = useCallback(async () => {
+    if (!selected.size) return;
+    if (!confirm(`Delete ${selected.size} clip${selected.size > 1 ? "s" : ""}? This removes the video and thumbnail and cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await Promise.all(
+        [...selected].map(async (id) => {
+          const res = await fetch(`/api/clip/${jobId}/${id}`, { method: "DELETE" });
+          if (!res.ok) throw new Error(`Failed to delete clip ${id}`);
+        })
+      );
+      exitSelect();
+      await load();
+    } catch {
+      alert("Could not delete some clips.");
+    } finally {
+      setDeleting(false);
+    }
+  }, [selected, jobId, exitSelect, load]);
 
   if (loading) {
     return (
@@ -92,11 +131,33 @@ export default function JobResultsPage() {
             {clips.length > 0 && ` · ${clips.length} clips`}
           </p>
         </div>
-        <Button asChild variant="outline">
-          <Link href="/clip">
-            <Scissors className="h-4 w-4" /> New Clip
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          {clips.length > 0 && !selectMode && (
+            <Button variant="outline" onClick={() => setSelectMode(true)}>
+              Select
+            </Button>
+          )}
+          {selectMode && (
+            <>
+              <Button
+                variant="destructive"
+                disabled={selected.size === 0 || deleting}
+                onClick={deleteSelected}
+              >
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Delete{selected.size > 0 ? ` (${selected.size})` : ""}
+              </Button>
+              <Button variant="ghost" onClick={exitSelect} disabled={deleting}>
+                Cancel
+              </Button>
+            </>
+          )}
+          <Button asChild variant="outline">
+            <Link href="/clip">
+              <Scissors className="h-4 w-4" /> New Clip
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Processing banner */}
@@ -166,11 +227,30 @@ export default function JobResultsPage() {
             <div className="flex items-center gap-2 text-sm">
               <span className="font-medium">Original clips</span>
               <span className="text-muted-foreground">({clips.length})</span>
+              {selectMode && (
+                <button
+                  className="ml-2 text-xs text-primary hover:underline"
+                  onClick={() =>
+                    setSelected((prev) =>
+                      prev.size === clips.length ? new Set() : new Set(clips.map((c) => c.id))
+                    )
+                  }
+                >
+                  {selected.size === clips.length ? "Clear all" : "Select all"}
+                </button>
+              )}
             </div>
           )}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {clips.map((clip) => (
-              <ClipCard key={clip.id} clip={clip} onSchedule={() => setScheduleClip(clip)} />
+              <ClipCard
+                key={clip.id}
+                clip={clip}
+                onSchedule={() => setScheduleClip(clip)}
+                selectMode={selectMode}
+                selected={selected.has(clip.id)}
+                onToggleSelect={() => toggleSelect(clip.id)}
+              />
             ))}
           </div>
         </>
@@ -183,13 +263,40 @@ export default function JobResultsPage() {
   );
 }
 
-function ClipCard({ clip, onSchedule }: { clip: Clip; onSchedule: () => void }) {
+function ClipCard({
+  clip,
+  onSchedule,
+  selectMode,
+  selected,
+  onToggleSelect,
+}: {
+  clip: Clip;
+  onSchedule: () => void;
+  selectMode: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
+}) {
   const [playing, setPlaying] = useState(false);
 
   return (
-    <Card className="group gap-0 overflow-hidden p-0">
+    <Card className={`group gap-0 overflow-hidden p-0 ${selected ? "ring-2 ring-primary" : ""}`}>
       <div className="relative aspect-[9/16] bg-black">
-        {playing ? (
+        {selectMode && (
+          <button
+            onClick={onToggleSelect}
+            className="absolute inset-0 z-10 flex items-start justify-start p-2"
+            aria-label={selected ? "Deselect clip" : "Select clip"}
+          >
+            <span
+              className={`flex h-6 w-6 items-center justify-center rounded-md border-2 ${
+                selected ? "border-primary bg-primary text-primary-foreground" : "border-white/80 bg-black/40"
+              }`}
+            >
+              {selected && <Check className="h-4 w-4" />}
+            </span>
+          </button>
+        )}
+        {playing && !selectMode ? (
           <video
             src={`/api/clip/media/${clip.id}`}
             controls
@@ -197,7 +304,10 @@ function ClipCard({ clip, onSchedule }: { clip: Clip; onSchedule: () => void }) 
             className="h-full w-full object-contain"
           />
         ) : (
-          <button onClick={() => setPlaying(true)} className="relative h-full w-full">
+          <button
+            onClick={() => (selectMode ? onToggleSelect() : setPlaying(true))}
+            className="relative h-full w-full"
+          >
             {clip.thumbnail ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img

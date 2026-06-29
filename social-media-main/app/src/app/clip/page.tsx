@@ -57,6 +57,7 @@ interface SourceMeta {
   thumbnail: string;
   width: number;
   height: number;
+  sizeBytes?: number;
 }
 
 // Coarse percent when only a persisted job status is available (no live progress —
@@ -71,6 +72,12 @@ const STATUS_PERCENT: Record<string, number> = {
   error: 0,
   canceled: 0,
 };
+
+function fmtBytes(bytes: number): string {
+  if (!bytes || bytes <= 0) return "";
+  const gb = bytes / 1e9;
+  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`;
+}
 
 function fmtClock(sec: number): string {
   const h = Math.floor(sec / 3600);
@@ -588,6 +595,7 @@ export default function NewClipPage() {
                 <p className="mt-1 text-xs text-muted-foreground">
                   Duration {fmtClock(meta.durationSec)}
                   {meta.width ? ` · ${meta.width}×${meta.height}` : ""}
+                  {meta.sizeBytes ? ` · ~${fmtBytes(meta.sizeBytes)}` : ""}
                 </p>
               )}
               {uploadFile && (
@@ -655,7 +663,11 @@ export default function NewClipPage() {
 
               {/* Processing timeframe */}
               {durationSec > 0 && (
-                <Field label={`Processing timeframe — ${fmtClock(rangeStart)} to ${fmtClock(rangeEnd || durationSec)}`}>
+                <Field label={`Processing timeframe — ${fmtClock(rangeStart)} to ${fmtClock(rangeEnd || durationSec)}${
+                  meta?.sizeBytes && durationSec
+                    ? ` · ~${fmtBytes(meta.sizeBytes * (((rangeEnd || durationSec) - rangeStart) / durationSec))}`
+                    : ""
+                }`}>
                   <div className="pt-3">
                     <Slider
                       min={0}

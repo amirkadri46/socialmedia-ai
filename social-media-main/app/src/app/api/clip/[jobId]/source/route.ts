@@ -24,19 +24,21 @@ export async function GET(
     return new Response("Invalid jobId", { status: 400 });
   }
 
-  // In supabase mode, redirect to a signed URL from the clip-sources bucket.
-  if (process.env.STORAGE_BACKEND === "supabase") {
-    const { data, error } = await serverClient()
-      .storage.from("clip-sources")
-      .createSignedUrl(`${jobId}.mp4`, 3600);
-    if (error || !data) {
-      return new Response("Source video not available.", { status: 404 });
-    }
-    return Response.redirect(data.signedUrl, 302);
-  }
-
+  // Prefer the local file when present (it always is in dev, and persists across temp
+  // clears). Only fall back to Supabase when there's no local copy — the per-clip source
+  // upload is skipped/failed for large files (>Supabase's file-size limit), so the bucket
+  // object may not exist even in supabase mode.
   const file = sourcePath(jobId);
   if (!existsSync(file)) {
+    if (process.env.STORAGE_BACKEND === "supabase") {
+      const { data, error } = await serverClient()
+        .storage.from("clip-sources")
+        .createSignedUrl(`${jobId}.mp4`, 3600);
+      if (error || !data) {
+        return new Response("Source video not available.", { status: 404 });
+      }
+      return Response.redirect(data.signedUrl, 302);
+    }
     return new Response("Source video not available (temp file may have been cleared).", {
       status: 404,
     });

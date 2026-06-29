@@ -5,6 +5,7 @@ import {
   clipsForJob as fileClipsForJob,
   getClip as fileGetClip,
   updateClip as fileUpdateClip,
+  deleteClipRows as fileDeleteClipRows,
 } from "@/lib/clip/store";
 import { serverClient } from "../client";
 
@@ -14,6 +15,7 @@ export interface ClipsRepo {
   get(clipId: string): Promise<Clip | undefined>;
   append(clips: Clip[]): Promise<void>;
   update(clipId: string, patch: Partial<Clip>): Promise<Clip | undefined>;
+  delete(clipId: string): Promise<void>;
 }
 
 // ── File backend ─────────────────────────────────────────────────────────────
@@ -24,6 +26,7 @@ export const fileClips: ClipsRepo = {
   async get(id) { return fileGetClip(id); },
   async append(clips) { appendClips(clips); },
   async update(id, patch) { return fileUpdateClip(id, patch); },
+  async delete(id) { fileDeleteClipRows([id]); },
 };
 
 // ── Supabase backend ─────────────────────────────────────────────────────────
@@ -133,5 +136,10 @@ export const supabaseClips: ClipsRepo = {
       .single();
     if (error) return undefined;
     return fromRow(data as Record<string, unknown>);
+  },
+  async delete(clipId) {
+    // clip_edits + scheduled_posts cascade via ON DELETE CASCADE on the FK.
+    const { error } = await serverClient().from("clips").delete().eq("id", clipId);
+    if (error) throw error;
   },
 };

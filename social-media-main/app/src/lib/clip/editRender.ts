@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, writeFileSync, renameSync, statSync, rmSync } from "fs";
 import path from "path";
 import os from "os";
-import { ffmpeg, probe } from "./ffmpeg";
+import { ffmpeg, probe, videoEncodeArgs } from "./ffmpeg";
 import { aspectDims } from "./render";
 import { buildAssFromConfig } from "./captions";
 import { clipMediaDir, persistentSourcePath } from "./store";
+import { usingSupabaseStorage, uploadClipFile } from "./storage";
 import { repos } from "../db";
 import { allTransitions, keptSegments, editedDuration, windowToEdited, layoutAt } from "./edit-timeline";
 import { paneCount, resolveFrame, splitSlots } from "./layout-geom";
@@ -311,7 +312,7 @@ export async function exportEdit(
       "-y", "-i", src,
       "-filter_complex", filter1,
       "-map", "[vc]", "-map", "[ac]",
-      "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+      ...videoEncodeArgs(),
       "-c:a", "aac", "-b:a", "128k",
       spine,
     ],
@@ -378,7 +379,7 @@ export async function exportEdit(
     args2.push("-map", "0:v", "-map", "0:a");
   }
   args2.push(
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+    ...videoEncodeArgs(),
     "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
     tmpFinal
   );
@@ -407,7 +408,11 @@ export async function exportEdit(
   }
 
   // Point the Clip at the edited file so results/download/schedule use it (keep original too).
-  await repos.clips.update(edit.clipId, { filePath: final });
+  // In supabase mode store the bucket key instead of the local path so it stays servable.
+  const stored = usingSupabaseStorage()
+    ? await uploadClipFile("clips", `${edit.clipId}-edited.mp4`, final, "video/mp4")
+    : final;
+  await repos.clips.update(edit.clipId, { filePath: stored });
   onProgress({ percent: 100, log: "Done", done: `/api/clip/download/${edit.clipId}` });
   return final;
 }

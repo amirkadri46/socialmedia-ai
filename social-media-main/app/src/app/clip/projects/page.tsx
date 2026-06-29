@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Film, Scissors, Loader2 } from "lucide-react";
+import { Film, Scissors, Loader2, Trash2 } from "lucide-react";
 import type { ClipJob } from "@/lib/types";
 
 function statusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
@@ -17,6 +17,7 @@ function statusVariant(status: string): "default" | "secondary" | "destructive" 
 export default function ProjectsPage() {
   const [jobs, setJobs] = useState<ClipJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/clip")
@@ -25,6 +26,20 @@ export default function ProjectsPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  async function deleteProject(job: ClipJob) {
+    if (!confirm(`Delete "${job.sourceTitle}"?`)) return;
+    setDeletingId(job.id);
+    try {
+      const res = await fetch(`/api/clip/${job.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      setJobs((current) => current.filter((j) => j.id !== job.id));
+    } catch {
+      alert("Could not delete project.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   return (
     <div className="space-y-6 pb-16">
@@ -57,22 +72,33 @@ export default function ProjectsPage() {
       ) : (
         <div className="space-y-2">
           {jobs.map((job) => (
-            <Link
+            <div
               key={job.id}
-              href={`/clip/${job.id}`}
               className="flex items-center justify-between gap-4 rounded-xl border bg-card px-5 py-4 transition-colors hover:bg-accent"
             >
-              <div className="min-w-0">
+              <Link href={`/clip/${job.id}`} className="min-w-0 flex-1">
                 <p className="truncate font-medium">{job.sourceTitle}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {job.clipModel} · {job.captionPreset} · {job.aspectRatio} ·{" "}
                   {new Date(job.createdAt).toLocaleString()}
                 </p>
+              </Link>
+              <div className="flex shrink-0 items-center gap-2">
+                <Badge variant={statusVariant(job.status)} className="capitalize">
+                  {job.status}
+                </Badge>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={deletingId === job.id}
+                  onClick={() => deleteProject(job)}
+                  title="Delete project"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </Button>
               </div>
-              <Badge variant={statusVariant(job.status)} className="capitalize shrink-0">
-                {job.status}
-              </Badge>
-            </Link>
+            </div>
           ))}
         </div>
       )}

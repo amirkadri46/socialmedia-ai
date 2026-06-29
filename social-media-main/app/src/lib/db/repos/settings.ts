@@ -21,6 +21,7 @@ export const fileSettings: SettingsRepo = {
 function overlayEnvSecrets(base: Partial<AppSettings>): AppSettings {
   return {
     provider: (base.provider ?? "openrouter") as AppSettings["provider"],
+    openaiModel: base.openaiModel ?? "gpt-4o",
     openrouterModel: base.openrouterModel ?? "deepseek/deepseek-v4-flash",
     geminiModel: base.geminiModel ?? "gemini-2.5-flash",
     linkedinCharLimit: base.linkedinCharLimit ?? 200,
@@ -58,6 +59,7 @@ export const supabaseSettings: SettingsRepo = {
     const r = data as Record<string, unknown>;
     return overlayEnvSecrets({
       provider: r.provider as AppSettings["provider"],
+      openaiModel: r.openai_model as string,
       openrouterModel: r.openrouter_model as string,
       geminiModel: r.gemini_model as string,
       linkedinCharLimit: r.linkedin_char_limit as number,
@@ -88,6 +90,7 @@ export const supabaseSettings: SettingsRepo = {
     const { error } = await serverClient().from("app_settings").upsert({
       id: 1,
       provider: settings.provider,
+      openai_model: settings.openaiModel,
       openrouter_model: settings.openrouterModel,
       gemini_model: settings.geminiModel,
       linkedin_char_limit: settings.linkedinCharLimit,

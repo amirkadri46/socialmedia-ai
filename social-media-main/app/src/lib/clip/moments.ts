@@ -97,8 +97,19 @@ Return ONLY a JSON array (no prose) of exactly the top moments, each:
   "hookType": string      // e.g. "Intrigue hook", "Question hook", "Bold claim"
 }`;
 
+  // Keep the chat() call outside the retry path: a transport/auth failure (401/429/timeout)
+  // should propagate, not trigger a second billed call. Only a JSON parse failure is retried.
   const raw = await chat(prompt, 4096);
-  const parsed = extractJson(raw);
+  let parsed: unknown;
+  try {
+    parsed = extractJson(raw);
+  } catch {
+    // Some models (esp. reasoning models) occasionally return empty/garbled output on the
+    // first try. Retry once with a stricter instruction before giving up.
+    parsed = extractJson(
+      await chat(`${prompt}\n\nReturn ONLY the raw JSON array — no prose, no code fences, no explanation.`, 4096)
+    );
+  }
   if (!Array.isArray(parsed)) throw new Error("LLM did not return a JSON array of moments.");
 
   const moments: Moment[] = (parsed as RawMoment[])

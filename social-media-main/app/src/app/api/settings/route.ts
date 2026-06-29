@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { repos } from "@/lib/db";
 import { resolveShortcuts } from "@/lib/clip/shortcuts";
-import type { AppSettings } from "@/lib/settings";
+import { ALLOWED_OPENAI_MODELS, type AppSettings } from "@/lib/settings";
 
 const SECRET_FIELDS = [
   "openaiApiKey",
@@ -37,12 +37,18 @@ export async function POST(req: Request) {
   // so a round-trip through the settings page must not erase what was saved).
   const existing = await repos.settings.get();
   const keep = <T>(incoming: T, stored: T): T => (incoming as unknown as string) ? incoming : stored;
+  // Reject unsupported model ids at the boundary so a stale/custom client can't persist
+  // a value the rest of the app (and the OpenAI API) won't accept.
+  if (body.openaiModel != null && !ALLOWED_OPENAI_MODELS.includes(body.openaiModel as (typeof ALLOWED_OPENAI_MODELS)[number])) {
+    return NextResponse.json({ error: "Unsupported openaiModel value." }, { status: 400 });
+  }
   // For supabase backend: only non-secret prefs are written to DB; secrets stay in env.
   // For file backend: the full settings (including keys entered in the UI) are persisted.
   try {
     await repos.settings.write({
       provider: body.provider ?? "openrouter",
       openaiApiKey: keep(body.openaiApiKey, existing.openaiApiKey),
+      openaiModel: body.openaiModel ?? "gpt-4o",
       openrouterApiKey: keep(body.openrouterApiKey, existing.openrouterApiKey),
       openrouterModel: body.openrouterModel ?? "deepseek/deepseek-v4-flash",
       geminiModel: body.geminiModel ?? "gemini-2.0-flash",

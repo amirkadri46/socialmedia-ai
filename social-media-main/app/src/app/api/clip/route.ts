@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { v4 as uuid } from "uuid";
-import { runClipPipeline } from "@/lib/clip/clipPipeline";
+import { runClipPipeline, errMessage } from "@/lib/clip/clipPipeline";
 import { repos } from "@/lib/db";
 import type { ClipJob } from "@/lib/types";
 
@@ -105,7 +105,7 @@ export async function POST(request: Request) {
                   momentsTotal: 0,
                   clipsRendered: 0,
                   log: [],
-                  errors: [err instanceof Error ? err.message : "Unknown error"],
+                  errors: [errMessage(err)],
                 })}\n\n`
               )
             );

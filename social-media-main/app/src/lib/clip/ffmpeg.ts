@@ -98,6 +98,31 @@ export function run(
   });
 }
 
+/**
+ * Video-encode ffmpeg args, shared by the clip render + the editor export so they stay in
+ * sync. Defaults to CPU libx264 (works everywhere, incl. Railway). Set
+ * `CLIP_VIDEO_ENCODER=h264_nvenc` on a machine with an NVIDIA GPU (e.g. a local RTX card)
+ * to encode on the GPU's NVENC chip — much faster. Quality knobs: CLIP_X264_PRESET /
+ * CLIP_NVENC_PRESET (p1 fastest … p7 best) / CLIP_NVENC_CQ.
+ */
+export function videoEncodeArgs(): string[] {
+  if ((process.env.CLIP_VIDEO_ENCODER || "libx264") === "h264_nvenc") {
+    return [
+      "-c:v", "h264_nvenc",
+      "-preset", process.env.CLIP_NVENC_PRESET || "p4",
+      "-rc", "vbr",
+      "-cq", process.env.CLIP_NVENC_CQ || "23",
+      "-pix_fmt", "yuv420p",
+    ];
+  }
+  return [
+    "-c:v", "libx264",
+    "-preset", process.env.CLIP_X264_PRESET || "veryfast",
+    "-crf", "20",
+    "-pix_fmt", "yuv420p",
+  ];
+}
+
 export const ffmpeg = (
   args: string[],
   opts?: { onStderr?: (c: string) => void; cwd?: string }

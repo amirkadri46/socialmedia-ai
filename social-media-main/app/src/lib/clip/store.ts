@@ -1,6 +1,6 @@
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
-import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, renameSync } from "fs";
+import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, renameSync, rmSync } from "fs";
 import path from "path";
 import type {
   ClipJob,
@@ -203,6 +203,29 @@ export function updateClip(clipId: string, patch: Partial<Clip>): Clip | undefin
   clips[idx] = { ...clips[idx], ...patch };
   writeClips(clips);
   return clips[idx];
+}
+
+/** Remove clip rows from clips.csv (file backend). */
+export function deleteClipRows(ids: string[]): void {
+  if (!ids.length) return;
+  const set = new Set(ids);
+  writeClips(readClips().filter((c) => !set.has(c.id)));
+}
+
+// ── Local-file cleanup (best-effort; used by the delete routes so media + edit docs
+// + transcripts don't pile up on disk after a clip/project is removed) ───────────────
+
+export function deleteClipLocalFiles(clipId: string): void {
+  for (const f of [`${clipId}.mp4`, `${clipId}-edited.mp4`, `${clipId}.jpg`]) {
+    try { unlinkSync(path.join(CLIP_DIR, f)); } catch { /* may not exist */ }
+  }
+  try { rmSync(path.join(CLIP_DIR, "assets", clipId), { recursive: true, force: true }); } catch { /* may not exist */ }
+  try { unlinkSync(path.join(EDITS_DIR, `${clipId}.json`)); } catch { /* may not exist */ }
+}
+
+export function deleteJobLocalFiles(jobId: string): void {
+  try { unlinkSync(path.join(CLIP_DIR, `source-${jobId}.mp4`)); } catch { /* may not exist */ }
+  try { unlinkSync(path.join(TRANSCRIPTS_DIR, `${jobId}.json`)); } catch { /* may not exist */ }
 }
 
 // ── Social accounts (JSON) ────────────────────────────────────────────────────────

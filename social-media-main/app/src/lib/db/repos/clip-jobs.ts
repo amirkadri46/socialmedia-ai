@@ -1,6 +1,7 @@
 import type { ClipJob, ClipProgress } from "@/lib/types";
 import {
   readJobs,
+  writeJobs,
   upsertJob as fileUpsertJob,
   getJob as fileGetJob,
   setLiveProgress as fileSetProgress,
@@ -16,6 +17,7 @@ export interface ClipJobsRepo {
   getAll(): Promise<ClipJob[]>;
   get(jobId: string): Promise<ClipJob | undefined>;
   upsert(job: ClipJob): Promise<void>;
+  delete(jobId: string): Promise<void>;
   // Live progress
   setProgress(jobId: string, progress: ClipProgress): Promise<void>;
   getProgress(jobId: string): Promise<ClipProgress | undefined>;
@@ -32,6 +34,7 @@ export const fileClipJobs: ClipJobsRepo = {
   async getAll() { return readJobs(); },
   async get(id) { return fileGetJob(id); },
   async upsert(job) { fileUpsertJob(job); },
+  async delete(id) { writeJobs(readJobs().filter((j) => j.id !== id)); },
   async setProgress(id, p) { fileSetProgress(id, p); },
   async getProgress(id) { return fileGetProgress(id); },
   async clearProgress(id) { fileClearProgress(id); },
@@ -110,6 +113,10 @@ export const supabaseClipJobs: ClipJobsRepo = {
   },
   async upsert(job) {
     const { error } = await serverClient().from("clip_jobs").upsert(toRow(job));
+    if (error) throw error;
+  },
+  async delete(id) {
+    const { error } = await serverClient().from("clip_jobs").delete().eq("id", id);
     if (error) throw error;
   },
   async setProgress(jobId, progress) {
