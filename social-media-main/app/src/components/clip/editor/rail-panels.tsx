@@ -1,14 +1,15 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { v4 as uuid } from "uuid";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Upload, Loader2, Trash2, Music, Film, Image as ImageIcon, Sparkles, Plus, Check, ChevronDown, ChevronRight } from "lucide-react";
-import type { ClipEdit, TransitionMarker, AudioTrack } from "@/lib/types";
+import type { ClipEdit, TransitionEasing, TransitionMarker, AudioTrack } from "@/lib/types";
 import { DEFAULT_BLUR_BG } from "@/lib/types";
 import { loadPresets, savePresets, defaultPreset, presetToOverlays, type LayerPreset, type PresetLayer } from "@/lib/clip/layer-presets";
 
@@ -99,36 +100,72 @@ export function BrollPanel({ edit, onUpdate, playhead }: { edit: ClipEdit; onUpd
 const TRANSITIONS: { type: TransitionMarker["type"]; label: string }[] = [
   { type: "fadein", label: "Fade in" },
   { type: "fadeout", label: "Fade out" },
-  { type: "crossfade", label: "Cross fade" },
-  { type: "crosszoom", label: "Cross zoom" },
   { type: "zoomin", label: "Zoom in" },
   { type: "zoomout", label: "Zoom out" },
 ];
-const TRANSITION_LABEL = Object.fromEntries(TRANSITIONS.map((t) => [t.type, t.label])) as Record<TransitionMarker["type"], string>;
+const TRANSITION_LABEL: Record<TransitionMarker["type"], string> = {
+  fadein: "Fade in",
+  fadeout: "Fade out",
+  crossfade: "Cross fade",
+  crosszoom: "Cross zoom",
+  zoomin: "Zoom in",
+  zoomout: "Zoom out",
+};
+const EASINGS: TransitionEasing[] = ["linear", "ease", "ease-in", "ease-out", "ease-in-out", "cubic", "quart", "quint", "circ", "expo"];
 
-export function TransitionsPanel({ edit, onUpdate, playhead }: { edit: ClipEdit; onUpdate: UpdateFn; playhead: number }) {
+export function TransitionsPanel({ edit, onUpdate, playhead, selectedTransitionId }: { edit: ClipEdit; onUpdate: UpdateFn; playhead: number; selectedTransitionId?: string }) {
+  const visibleTransitions = edit.transitions.filter((t) => t.type !== "crossfade" && t.type !== "crosszoom");
+  const [panelSelectedId, setPanelSelectedId] = useState<string | undefined>(selectedTransitionId);
+  useEffect(() => { if (selectedTransitionId !== undefined) setPanelSelectedId(selectedTransitionId); }, [selectedTransitionId]);
+  const selected = visibleTransitions.find((t) => t.id === (selectedTransitionId ?? panelSelectedId)) ?? visibleTransitions.find((t) => Math.abs(t.atTime - playhead) < 0.2) ?? visibleTransitions[0];
+  const patch = (id: string, p: Partial<TransitionMarker>) => onUpdate((d) => { const t = d.transitions.find((x) => x.id === id); if (t) Object.assign(t, p); });
+
   return (
     <PanelShell title="Transitions">
-      <div className="flex items-center justify-between">
-        <span className="text-sm">Auto transitions</span>
-        <Switch
-          checked={edit.autoTransitions}
-          onCheckedChange={() => onUpdate((d) => { d.autoTransitions = !d.autoTransitions; })}
-        />
-      </div>
       <div className="grid grid-cols-2 gap-2">
         {TRANSITIONS.map((t) => (
           <Button
             key={t.type}
             variant="outline"
-            onClick={() => onUpdate((d) => { d.transitions.push({ id: uuid(), atTime: playhead, type: t.type, durationSec: 3 }); })}
+            onClick={() => onUpdate((d) => { d.transitions.push({ id: uuid(), atTime: playhead, type: t.type, durationSec: t.type.includes("zoom") ? 1.2 : 0.75, startScale: t.type === "zoomout" ? 1.3 : 1, endScale: t.type === "zoomin" ? 1.3 : 1, inEasing: "ease", outEasing: "ease" }); })}
             className="h-auto py-3 text-xs"
           >{t.label}</Button>
         ))}
       </div>
+
+      {selected && (
+        <div className="space-y-3 rounded-md border bg-card p-3">
+          <div className="flex items-center gap-2">
+            <Film className="h-4 w-4 text-muted-foreground" />
+            <span className="min-w-0 flex-1 text-sm font-semibold">{TRANSITION_LABEL[selected.type]}</span>
+            <span className="text-[11px] text-muted-foreground">{selected.atTime.toFixed(2)}s</span>
+          </div>
+          <SliderRow label="Duration" min={0.05} max={5} step={0.01} value={selected.durationSec} fmt={(v) => `${v.toFixed(2)}s`} onChange={(v) => patch(selected.id, { durationSec: v })} />
+
+          {(selected.type === "zoomin" || selected.type === "zoomout") && (
+            <>
+              <SliderRow label="Start" min={0.2} max={4} step={0.01} value={selected.startScale ?? (selected.type === "zoomout" ? 1.3 : 1)} fmt={(v) => v.toFixed(2)} onChange={(v) => patch(selected.id, { startScale: v })} />
+              <SliderRow label="End" min={0.2} max={4} step={0.01} value={selected.endScale ?? (selected.type === "zoomin" ? 1.3 : 1)} fmt={(v) => v.toFixed(2)} onChange={(v) => patch(selected.id, { endScale: v })} />
+              <EaseSelect label="In easing" value={selected.inEasing ?? "circ"} onChange={(v) => patch(selected.id, { inEasing: v })} />
+              <EaseSelect label="Out easing" value={selected.outEasing ?? "circ"} onChange={(v) => patch(selected.id, { outEasing: v })} />
+              <SliderRow label="Anchor X" min={0} max={100} step={1} value={selected.anchorX ?? 50} fmt={(v) => `${Math.round(v)}%`} onChange={(v) => patch(selected.id, { anchorX: v })} />
+              <SliderRow label="Anchor Y" min={0} max={100} step={1} value={selected.anchorY ?? 50} fmt={(v) => `${Math.round(v)}%`} onChange={(v) => patch(selected.id, { anchorY: v })} />
+            </>
+          )}
+
+          {(selected.type === "fadein" || selected.type === "fadeout") && (
+            <>
+              <EaseSelect label="Curve" value={selected.curve ?? "ease"} onChange={(v) => patch(selected.id, { curve: v })} />
+              <SliderRow label="Start op" min={0} max={1} step={0.01} value={selected.startOpacity ?? (selected.type === "fadein" ? 0 : 1)} fmt={(v) => v.toFixed(2)} onChange={(v) => patch(selected.id, { startOpacity: v })} />
+              <SliderRow label="End op" min={0} max={1} step={0.01} value={selected.endOpacity ?? (selected.type === "fadeout" ? 0 : 1)} fmt={(v) => v.toFixed(2)} onChange={(v) => patch(selected.id, { endOpacity: v })} />
+            </>
+          )}
+        </div>
+      )}
+
       <div className="space-y-1.5">
-        {edit.transitions.map((t) => (
-          <div key={t.id} className="space-y-1.5 rounded-md border bg-card p-2">
+        {visibleTransitions.map((t) => (
+          <div key={t.id} onClick={() => setPanelSelectedId(t.id)} className={`cursor-pointer space-y-1.5 rounded-md border bg-card p-2 ${selected?.id === t.id ? "ring-2 ring-primary" : ""}`}>
             <div className="flex items-center gap-2">
               <Film className="h-4 w-4 text-muted-foreground" />
               <span className="min-w-0 flex-1 truncate text-xs">{TRANSITION_LABEL[t.type]} @ {t.atTime.toFixed(1)}s</span>
@@ -138,17 +175,22 @@ export function TransitionsPanel({ edit, onUpdate, playhead }: { edit: ClipEdit;
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-10 text-[10px] text-muted-foreground">Duration</span>
-              <Slider min={0.05} max={5} step={0.05} value={[t.durationSec]}
-                onValueChange={([v]) => onUpdate((d) => { const x = d.transitions.find((x) => x.id === t.id); if (x) x.durationSec = v; })}
-                className="flex-1" />
-              <span className="w-8 text-[10px] text-muted-foreground">{t.durationSec.toFixed(1)}s</span>
-            </div>
           </div>
         ))}
       </div>
     </PanelShell>
+  );
+}
+
+function EaseSelect({ label, value, onChange }: { label: string; value: TransitionEasing; onChange: (v: TransitionEasing) => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-16 text-[11px] text-muted-foreground">{label}</span>
+      <Select value={value} onValueChange={(v) => onChange(v as TransitionEasing)}>
+        <SelectTrigger size="sm" className="h-8 flex-1"><SelectValue /></SelectTrigger>
+        <SelectContent>{EASINGS.map((e) => <SelectItem key={e} value={e}>{e}</SelectItem>)}</SelectContent>
+      </Select>
+    </div>
   );
 }
 

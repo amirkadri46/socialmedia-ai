@@ -16,12 +16,13 @@ import type { ScheduleRule } from "@/lib/db/types";
 const STEPS = ["Details", "Videos", "Accounts", "Schedule & Publish"];
 
 const DEFAULT_RULE: ScheduleRule = {
-  frequencyHours: 3,
+  mode: "now",
+  frequencyHours: 1,
   windowStart: "09:00",
-  windowEnd: "22:00",
+  windowEnd: "18:00",
+  startDate: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date()),
   timezone: "Asia/Kolkata",
   randomizeMinutes: 0,
-  startDate: new Date().toISOString().split("T")[0],
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -50,6 +51,7 @@ export default function NewCampaignPage() {
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [scheduleValid, setScheduleValid] = useState(true);
 
   const canNext = [
     name.trim().length > 0,
@@ -197,6 +199,7 @@ export default function NewCampaignPage() {
             videoCount={selectedVideoIds.length}
             accountCount={selectedAccountIds.length}
             scheduleRule={rule}
+            onValidChange={setScheduleValid}
           />
         </div>
       )}
@@ -225,7 +228,7 @@ export default function NewCampaignPage() {
                 {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 Save as Draft
               </Button>
-              <Button onClick={() => handlePublish(true)} disabled={saving}>
+              <Button onClick={() => handlePublish(true)} disabled={saving || !scheduleValid}>
                 {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 Publish Campaign
               </Button>

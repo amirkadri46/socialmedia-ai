@@ -148,18 +148,16 @@ async function processCampaign(campaignId: string): Promise<void> {
   let newCursor = cursor;
 
   for (const cv of campaignVideos) {
-    const jitterMs =
-      rule.randomizeMinutes > 0
+    for (const accountId of accountIds) {
+      // ponytail: per-account jitter so all accounts in a slot don't fire at the exact same second
+      const jitterMs = rule.randomizeMinutes > 0
         ? (Math.random() * 2 - 1) * rule.randomizeMinutes * 60_000
         : 0;
-    const scheduledAt = new Date(slotTime.getTime() + jitterMs).toISOString();
-
-    for (const accountId of accountIds) {
       jobs.push({
         campaign_id: campaignId,
         video_id: cv.video_id,
         account_id: accountId,
-        scheduled_at: scheduledAt,
+        scheduled_at: new Date(slotTime.getTime() + jitterMs).toISOString(),
         idempotency_key: `${campaignId}-${cv.video_id}-${accountId}`,
         status: "queued",
         retry_count: 0,
@@ -176,9 +174,17 @@ async function processCampaign(campaignId: string): Promise<void> {
     if (error && error.code !== "23505") {
       throw new Error(`Failed to insert jobs: ${error.message}`);
     }
+    const { data: earliestPersistedJob } = await supabase
+      .from("pub_upload_jobs")
+      .select("scheduled_at")
+      .eq("campaign_id", campaignId)
+      .order("scheduled_at", { ascending: true })
+      .limit(1)
+      .single();
+    const earliestAt = earliestPersistedJob?.scheduled_at ?? jobs[0].scheduled_at;
     await supabase
       .from("pub_campaigns")
-      .update({ status: Date.parse(jobs[0].scheduled_at) > Date.now() ? "scheduled" : "running" })
+      .update({ status: Date.parse(earliestAt) > Date.now() ? "scheduled" : "running" })
       .eq("id", campaignId);
     console.log(`[CampaignRunner] Campaign ${campaignId}: generated ${jobs.length} jobs, cursor → ${newCursor}`);
   }

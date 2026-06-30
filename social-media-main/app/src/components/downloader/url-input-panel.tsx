@@ -23,10 +23,13 @@ export function UrlInputPanel({
   const fileRef = useRef<HTMLInputElement>(null);
   const count = parseUrls(text).length;
 
-  // Persist the pasted URLs so a page refresh doesn't lose them.
+  // Load persisted URLs after mount to avoid SSR/client hydration mismatch.
   useEffect(() => {
-    setText(localStorage.getItem("downloader:urls") ?? "");
+    const saved = localStorage.getItem("downloader:urls");
+    if (saved) setText(saved);
   }, []);
+
+  // Persist the pasted URLs so a page refresh doesn't lose them.
   useEffect(() => {
     localStorage.setItem("downloader:urls", text);
   }, [text]);

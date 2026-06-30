@@ -424,11 +424,33 @@ export interface BrollSegment {
   mode: "fill" | "fit";
 }
 
+export type TransitionEasing =
+  | "linear"
+  | "ease"
+  | "ease-in"
+  | "ease-out"
+  | "ease-in-out"
+  | "cubic"
+  | "quart"
+  | "quint"
+  | "circ"
+  | "expo";
+
 export interface TransitionMarker {
   id: string;
   atTime: number;
   type: "fadein" | "fadeout" | "crossfade" | "crosszoom" | "zoomin" | "zoomout";
   durationSec: number;
+  amount?: number;
+  startScale?: number;
+  endScale?: number;
+  inEasing?: TransitionEasing;
+  outEasing?: TransitionEasing;
+  anchorX?: number;
+  anchorY?: number;
+  curve?: TransitionEasing;
+  startOpacity?: number;
+  endOpacity?: number;
 }
 
 export interface AudioTrack {

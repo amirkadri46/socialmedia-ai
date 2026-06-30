@@ -294,7 +294,10 @@ export async function exportEdit(
       if (tr && D >= 0.05) {
         const offset = Math.max(0, vDurAcc - D);
         const xType = xfadeMap[tr.type];
-        chainParts.push(`${vCur}${vNext}xfade=transition=${xType}:duration=${D.toFixed(3)}:offset=${offset.toFixed(3)}${vOut}`);
+        const vCurTb = `[vtb${i}a]`, vNextTb = `[vtb${i}b]`;
+        chainParts.push(`${vCur}settb=AVTB${vCurTb}`);
+        chainParts.push(`${vNext}settb=AVTB${vNextTb}`);
+        chainParts.push(`${vCurTb}${vNextTb}xfade=transition=${xType}:duration=${D.toFixed(3)}:offset=${offset.toFixed(3)}${vOut}`);
         chainParts.push(`${aCur}${aNext}acrossfade=d=${D.toFixed(3)}${aOut}`);
         vDurAcc = vDurAcc - D + thisDur; // overlap shortens the timeline by D
       } else {

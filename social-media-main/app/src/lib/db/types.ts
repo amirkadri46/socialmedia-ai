@@ -56,12 +56,14 @@ export interface VideoCaption {
 }
 
 export interface ScheduleRule {
+  mode?: "now" | "single" | "multi"; // absent on old records → treated as "single"
   frequencyHours: number;
-  windowStart: string;
-  windowEnd: string;
+  windowStart: string;  // start time (single) or daily start time (multi)
+  windowEnd?: string;   // daily end time (multi only)
+  startDate: string;    // YYYY-MM-DD
+  endDate?: string;     // YYYY-MM-DD (multi only)
   timezone: string;
   randomizeMinutes: number;
-  startDate: string;
 }
 
 export interface Campaign {
