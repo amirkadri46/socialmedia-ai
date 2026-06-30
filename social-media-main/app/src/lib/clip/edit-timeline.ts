@@ -1,4 +1,4 @@
-import type { ClipEdit, TransitionMarker, Word } from "../types";
+import type { ClipEdit, TransitionEasing, TransitionMarker, Word } from "../types";
 
 // Pure time-mapping shared by the browser preview and the ffmpeg export so they
 // never diverge (PRD §2). All "window" coords are seconds within [sourceIn, sourceOut];
@@ -75,10 +75,44 @@ export function nextKeptWindow(edit: ClipEdit, windowT: number): number | null {
 
 /** The active LayoutSegment for an edited-timeline time. */
 export function layoutAt(edit: ClipEdit, editedT: number) {
-  return (
-    edit.layout.find((s) => editedT >= s.start && editedT < s.end) ??
-    edit.layout[0]
-  );
+  const layout = [...(edit.layout ?? [])].sort((a, b) => a.start - b.start);
+  if (!layout.length) return undefined;
+  const t = Math.min(Math.max(0, editedT), editedDuration(edit));
+  return layout.find((s) => t >= s.start - 1e-6 && t < s.end - 1e-6) ?? layout[layout.length - 1];
+}
+
+export function easeValue(kind: TransitionEasing | undefined, t: number): number {
+  const x = Math.min(1, Math.max(0, t));
+  switch (kind ?? "ease") {
+    case "linear": return x;
+    case "ease-in": return x * x;
+    case "ease-out": return 1 - (1 - x) * (1 - x);
+    case "ease-in-out": return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+    case "cubic": return x * x * x;
+    case "quart": return x * x * x * x;
+    case "quint": return x * x * x * x * x;
+    case "circ": return 1 - Math.sqrt(1 - x * x);
+    case "expo": return x === 0 ? 0 : Math.pow(2, 10 * x - 10);
+    case "ease":
+    default:
+      return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  }
+}
+
+export function transitionWindow(t: TransitionMarker): Range {
+  const d = Math.max(0.001, t.durationSec);
+  return { start: t.atTime, end: t.atTime + d };
+}
+
+export function transitionAt(edit: ClipEdit, editedT: number): { marker: TransitionMarker; p: number } | null {
+  const transitions = allTransitions(edit);
+  for (const marker of transitions) {
+    const w = transitionWindow(marker);
+    if (editedT >= w.start && editedT < w.end) {
+      return { marker, p: (editedT - w.start) / Math.max(0.001, w.end - w.start) };
+    }
+  }
+  return null;
 }
 
 /**
@@ -114,30 +148,7 @@ export function isRemoved(edit: ClipEdit, windowT: number): boolean {
  * the exact same set (PRD §2 parity).
  */
 export function allTransitions(edit: ClipEdit): TransitionMarker[] {
-  const manual = edit.transitions ?? [];
-  if (!edit.autoTransitions) return manual;
-
-  const autoMarkers: TransitionMarker[] = [];
-  // Layout (Fill/Fit / speaker-layout) boundaries — already in edited-timeline coords.
-  for (const seg of edit.layout) {
-    if (seg.start > 0) {
-      autoMarkers.push({ id: `auto-layout-${seg.id}`, atTime: seg.start, type: "crossfade", durationSec: 0.4 });
-    }
-  }
-  // Kept-segment (speech-cleanup cut) boundaries — cumulative edited time between kept pieces.
-  const segs = keptSegments(edit);
-  let acc = 0;
-  for (let i = 0; i < segs.length - 1; i++) {
-    acc += segs[i].end - segs[i].start;
-    if (acc > 0) autoMarkers.push({ id: `auto-cut-${i}`, atTime: acc, type: "crossfade", durationSec: 0.4 });
-  }
-
-  // Manual wins; also dedupe auto-markers against each other within 0.3s.
-  const result = [...manual];
-  for (const a of autoMarkers) {
-    if (!result.some((m) => Math.abs(m.atTime - a.atTime) < 0.3)) result.push(a);
-  }
-  return result;
+  return edit.transitions ?? [];
 }
 
 /** Coalesce overlapping/adjacent ranges (shared by transcript cuts and timeline cuts). */

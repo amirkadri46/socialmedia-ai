@@ -59,7 +59,9 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
   const [pxPerSec, setPxPerSec] = useState(40);
   const [leftWidth, setLeftWidth] = useState(360);
   const [cropOpen, setCropOpen] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<TimelineItem | null>(null);
+  const [selectedItems, setSelectedItems] = useState<TimelineItem[]>([]);
+  const selectedItem = selectedItems[0] ?? null;
+  const setSelectedItem = (item: TimelineItem | null) => setSelectedItems(item ? [item] : []);
   const selectedTextId = selectedItem?.kind === "text" ? selectedItem.id : null;
   const [exporting, setExporting] = useState<{ pct: number; log: string; done?: string } | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -71,6 +73,7 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
   const toolMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exportAbortController = useRef<AbortController | null>(null);
   const raf = useRef<number | null>(null);
+  const editRef = useRef<ClipEdit | null>(null);
 
   useEffect(() => {
     return () => {
@@ -80,6 +83,7 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
   }, []);
 
   const edit = ed.edit;
+  editRef.current = edit;
   const duration = edit ? editedDuration(edit) : 0;
   const frameStep = fps > 0 ? 1 / fps : 1 / 30;
 
@@ -106,6 +110,12 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
   );
 
   const stepFrame = useCallback((dir: 1 | -1) => seek((prev) => prev + dir * frameStep), [seek, frameStep]);
+  const handleTimelineZoom = useCallback((dir: 1 | -1) => {
+    setPxPerSec((p) => Math.min(160, Math.max(8, p + dir * 12)));
+  }, []);
+  const handleTimelineMeta = useCallback((m: { sourceFps: number }) => {
+    setFps(m.sourceFps);
+  }, []);
 
   // ── Timeline toolbar actions (also bound to shortcuts) ──────────────────────────
   const splitAtPlayhead = useCallback(() => {
@@ -142,25 +152,26 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
   // otherwise fall back to removing the marquee time-range selection.
   const deleteSelected = useCallback(() => {
     if (!edit) return;
-    if (selectedItem) {
-      const { kind, id } = selectedItem;
+    if (selectedItems.length) {
       ed.update((d) => {
-        if (kind === "text") d.textOverlays = d.textOverlays.filter((x) => x.id !== id);
-        else if (kind === "media") d.mediaOverlays = d.mediaOverlays.filter((x) => x.id !== id);
-        else if (kind === "broll") d.broll = d.broll.filter((x) => x.id !== id);
-        else if (kind === "audio") d.audio = d.audio.filter((x) => x.id !== id);
-        else if (kind === "layout") {
-          // Delete a Fill/Fit layer: merge its span into a neighbor (keep ≥1 segment).
-          if (d.layout.length <= 1) return;
+        const ids = (k: TimelineItem["kind"]) => new Set(selectedItems.filter((x) => x.kind === k).map((x) => x.id));
+        const textIds = ids("text"), mediaIds = ids("media"), brollIds = ids("broll"), audioIds = ids("audio"), transitionIds = ids("transition");
+        d.textOverlays = d.textOverlays.filter((x) => !textIds.has(x.id));
+        d.mediaOverlays = d.mediaOverlays.filter((x) => !mediaIds.has(x.id));
+        d.broll = d.broll.filter((x) => !brollIds.has(x.id));
+        d.audio = d.audio.filter((x) => !audioIds.has(x.id));
+        d.transitions = d.transitions.filter((x) => !transitionIds.has(x.id));
+        for (const layoutId of ids("layout")) {
+          if (d.layout.length <= 1) break;
           const sorted = [...d.layout].sort((a, b) => a.start - b.start);
-          const i = sorted.findIndex((s) => s.id === id);
-          if (i < 0) return;
+          const i = sorted.findIndex((s) => s.id === layoutId);
+          if (i < 0) continue;
           if (i > 0) sorted[i - 1].end = sorted[i].end;
           else sorted[i + 1].start = sorted[i].start;
-          d.layout = sorted.filter((s) => s.id !== id);
+          d.layout = sorted.filter((s) => s.id !== layoutId);
         }
       });
-      setSelectedItem(null);
+      setSelectedItems([]);
       return;
     }
     if (!selection || selection.end - selection.start < 0.05) return;
@@ -170,7 +181,7 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
       if (b > a) d.removed = mergeRanges([...d.removed, { start: a, end: b }]);
     });
     setSelection(null);
-  }, [edit, ed, selection, selectedItem]);
+  }, [edit, ed, selection, selectedItems]);
 
   const toggleMute = useCallback(() => ed.update((d) => { d.muteBase = !d.muteBase; }), [ed]);
 
@@ -185,6 +196,53 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
       });
     });
   }, [edit, ed, playhead]);
+
+  const moveSelected = useCallback((dir: 1 | -1) => {
+    if (!edit || !selectedItems.length) return false;
+    const delta = dir * frameStep;
+    let moved = false;
+    ed.update((d) => {
+      const dur = editedDuration(d);
+      const shiftTimed = (list: { id: string; start: number; end: number }[], id: string): boolean => {
+        const x = list.find((item) => item.id === id);
+        if (!x) return false;
+        const len = x.end - x.start;
+        x.start = Math.min(dur - len, Math.max(0, x.start + delta));
+        x.end = x.start + len;
+        return true;
+      };
+      // Layout segments: batch from original positions to avoid sequential-mutation of neighbor bounds
+      const layoutIds = new Set(selectedItems.filter((x) => x.kind === "layout").map((x) => x.id));
+      if (layoutIds.size > 0) {
+        const sorted = [...d.layout].sort((a, b) => a.start - b.start);
+        const orig = sorted.map((s) => ({ id: s.id, start: s.start, end: s.end }));
+        for (let i = 0; i < sorted.length; i++) {
+          if (!layoutIds.has(sorted[i].id)) continue;
+          const len = orig[i].end - orig[i].start;
+          const min = i > 0 ? orig[i - 1].start + 0.05 : 0;
+          const max = i < sorted.length - 1 ? orig[i + 1].end - len - 0.05 : dur - len;
+          const ns = Math.min(max, Math.max(min, orig[i].start + delta));
+          sorted[i].start = ns;
+          sorted[i].end = ns + len;
+          if (i > 0 && !layoutIds.has(orig[i - 1].id)) sorted[i - 1].end = ns;
+          if (i < sorted.length - 1 && !layoutIds.has(orig[i + 1].id)) sorted[i + 1].start = ns + len;
+          moved = true;
+        }
+        d.layout = sorted;
+      }
+      for (const item of selectedItems) {
+        if (item.kind === "text") { if (shiftTimed(d.textOverlays, item.id)) moved = true; }
+        else if (item.kind === "media") { if (shiftTimed(d.mediaOverlays, item.id)) moved = true; }
+        else if (item.kind === "broll") { if (shiftTimed(d.broll, item.id)) moved = true; }
+        else if (item.kind === "audio") { if (shiftTimed(d.audio, item.id)) moved = true; }
+        else if (item.kind === "transition") {
+          const t = d.transitions.find((x) => x.id === item.id);
+          if (t) { t.atTime = Math.min(dur, Math.max(0, t.atTime + delta)); moved = true; }
+        }
+      }
+    });
+    return moved;
+  }, [edit, ed, frameStep, selectedItems]);
 
   // Auto reframe: AI-segment the clip into Fill (speaker → 9:16 crop) / Fit (b-roll/text),
   // then drop the result into edit.layout (editable afterward via the chips + inline frame).
@@ -213,20 +271,22 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
   // Play loop: let the video play; map its time back to the edited timeline, skipping
   // removed gaps; pause at the edited end.
   useEffect(() => {
-    if (!playing || !edit) return;
+    if (!playing || !editRef.current) return;
     const v = videoRef.current;
     if (!v) return;
     v.play().catch(() => {});
     const tick = () => {
-      const windowT = v.currentTime - edit.sourceInSec;
-      if (isRemoved(edit, windowT)) {
-        const nxt = nextKeptWindow(edit, windowT);
+      const e = editRef.current;
+      if (!e) { setPlaying(false); return; }
+      const windowT = v.currentTime - e.sourceInSec;
+      if (isRemoved(e, windowT)) {
+        const nxt = nextKeptWindow(e, windowT);
         if (nxt == null) { setPlaying(false); return; }
-        v.currentTime = edit.sourceInSec + nxt;
+        v.currentTime = e.sourceInSec + nxt;
       }
-      const ph = windowToEdited(edit, v.currentTime - edit.sourceInSec);
-      setPlayhead(ph);
-      if (ph >= duration - 0.05 || v.currentTime >= edit.sourceOutSec) {
+      const ph = windowToEdited(e, v.currentTime - e.sourceInSec);
+      setPlayhead((prev) => (Math.abs(prev - ph) < 1 / 120 ? prev : ph));
+      if (ph >= editedDuration(e) - 0.05 || v.currentTime >= e.sourceOutSec) {
         setPlaying(false);
         return;
       }
@@ -237,7 +297,7 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
       if (raf.current) cancelAnimationFrame(raf.current);
       v.pause();
     };
-  }, [playing, edit, duration]);
+  }, [playing]);
 
   // Keyboard shortcuts (configurable in Settings).
   useEffect(() => {
@@ -247,8 +307,8 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
       const combo = eventToCombo(e);
       const is = (a: ShortcutAction) => shortcuts[a] === combo;
       if (is("playPause")) { e.preventDefault(); setPlaying((p) => !p); }
-      else if (is("prevFrame")) { e.preventDefault(); stepFrame(-1); }
-      else if (is("nextFrame")) { e.preventDefault(); stepFrame(1); }
+      else if (is("prevFrame")) { e.preventDefault(); if (!moveSelected(-1)) stepFrame(-1); }
+      else if (is("nextFrame")) { e.preventDefault(); if (!moveSelected(1)) stepFrame(1); }
       else if (is("split")) { e.preventDefault(); splitAtPlayhead(); }
       else if (is("delete") || combo === "backspace") { e.preventDefault(); deleteSelected(); }
       else if (is("mute")) { e.preventDefault(); toggleMute(); }
@@ -258,7 +318,7 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [shortcuts, stepFrame, splitAtPlayhead, deleteSelected, toggleMute, addText, ed]);
+  }, [shortcuts, stepFrame, moveSelected, splitAtPlayhead, deleteSelected, toggleMute, addText, ed]);
 
   // Export via SSE.
   async function runExport() {
@@ -461,7 +521,7 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
               {panel === "presets" && <LayerPresetsPanel edit={edit} onUpdate={ed.update} playhead={playhead} />}
               {panel === "background" && <BackgroundPanel edit={edit} onUpdate={ed.update} playhead={playhead} />}
               {panel === "broll" && <BrollPanel edit={edit} onUpdate={ed.update} playhead={playhead} />}
-              {panel === "transitions" && <TransitionsPanel edit={edit} onUpdate={ed.update} playhead={playhead} />}
+              {panel === "transitions" && <TransitionsPanel edit={edit} onUpdate={ed.update} playhead={playhead} selectedTransitionId={selectedItem?.kind === "transition" ? selectedItem.id : undefined} />}
               {panel === "audio" && <AudioPanel edit={edit} onUpdate={ed.update} playhead={playhead} />}
               {panel === "text" && <TextPanelInline edit={edit} onUpdate={ed.update} playhead={playhead} />}
             </div>
@@ -505,7 +565,7 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
             <span className="mx-1 h-5 w-px bg-border" />
             <Button onClick={splitAtPlayhead} variant="ghost" size="sm" title={`Split at playhead (${formatCombo(shortcuts.split)})`}><Scissors className="h-4 w-4" /> Split</Button>
             {toolMsg && <span className="text-xs text-amber-500">{toolMsg}</span>}
-            <Button onClick={deleteSelected} variant="ghost" size="sm" disabled={!selection && !selectedItem} title={`Delete ${selectedItem ? selectedItem.kind : "selection"} (${formatCombo(shortcuts.delete)})`}><Trash2 className="h-4 w-4" /> Delete</Button>
+            <Button onClick={deleteSelected} variant="ghost" size="sm" disabled={!selection && !selectedItems.length} title={`Delete ${selectedItems.length ? `${selectedItems.length} selected` : "selection"} (${formatCombo(shortcuts.delete)})`}><Trash2 className="h-4 w-4" /> Delete</Button>
             <Button onClick={toggleMute} variant={edit.muteBase ? "secondary" : "ghost"} size="sm" title={`Mute base audio (${formatCombo(shortcuts.mute)})`}>{edit.muteBase ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} Mute</Button>
             <Button onClick={addText} variant="ghost" size="sm" title={`Add text (${formatCombo(shortcuts.addText)})`}><Type className="h-4 w-4" /> Add</Button>
           </div>
@@ -521,13 +581,16 @@ export function EditorShell({ jobId, clipId }: { jobId: string; clipId: string }
             playhead={playhead}
             pxPerSec={pxPerSec}
             onSeek={seek}
-            onZoom={(dir) => setPxPerSec((p) => Math.min(160, Math.max(8, p + dir * 12)))}
+            onZoom={handleTimelineZoom}
             onUpdate={ed.update}
             selection={selection}
             onSelection={setSelection}
-            selectedItem={selectedItem}
-            onSelectItem={setSelectedItem}
-            onMeta={(m) => setFps(m.sourceFps)}
+            selectedItems={selectedItems}
+            onSelectItems={(items) => {
+              setSelectedItems(items);
+              if (items[0]?.kind === "transition") setPanel("transitions");
+            }}
+            onMeta={handleTimelineMeta}
           />
         </div>
       </div>

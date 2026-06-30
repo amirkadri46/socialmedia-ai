@@ -28,10 +28,10 @@ export async function DELETE(
   if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
   const TERMINAL = new Set(["done", "error", "canceled"]);
   if (!TERMINAL.has(job.status)) {
-    return NextResponse.json(
-      { error: "Job is still running. Cancel it before deleting." },
-      { status: 409 }
-    );
+    // Signal the worker to stop (best-effort); proceed with deletion regardless so
+    // stuck/hung jobs can always be cleaned up. The worker will error harmlessly if it
+    // tries to write after files are gone.
+    repos.clipJobs.requestCancel(jobId);
   }
   // Remove every clip's media + DB row, then the job's source/transcript, then the job
   // itself — so nothing is orphaned in Supabase Storage / on local disk. (The DB rows

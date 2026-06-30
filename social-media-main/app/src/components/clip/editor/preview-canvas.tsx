@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type RefObject, type CSSProperties } from "react";
 import type { ClipEdit, CropRect, LayoutKind, VideoFrame, Word } from "@/lib/types";
-import { allTransitions, editedToWindow, layoutAt, windowWords } from "@/lib/clip/edit-timeline";
+import { easeValue, editedToWindow, layoutAt, transitionAt, windowWords } from "@/lib/clip/edit-timeline";
 import {
   aspectRatioValue, resolveFrame,
   slotAspect, splitSlots,
@@ -46,6 +46,7 @@ export function PreviewCanvas({
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const windowT = editedToWindow(edit, playhead);
+  const expectedSourceT = edit.sourceInSec + windowT;
   const seg = layoutAt(edit, playhead);
   const canvasAR = aspectRatioValue(edit.aspectRatio);
   const [srcDims, setSrcDims] = useState({ w: 16, h: 9 });
@@ -58,47 +59,70 @@ export function PreviewCanvas({
   // active at the current playhead with its phase ("out" = into the cut, "in" = out of it)
   // and progress p (0→1). Computed synchronously in render so it's frame-accurate with the
   // playhead (no useEffect lag). Each marker's window is [atTime - d/2, atTime + d/2].
-  const allT = useMemo(() => allTransitions(edit), [edit]);
+  const activeTransition = useMemo(() => transitionAt(edit, playhead), [edit, playhead]);
   // Each transition has a window keyed off its boundary `atTime` and resolves to the NORMAL
   // state at the end (no symmetric pulse): directional effects (fadein/zoomin/zoomout) play
   // [atTime, atTime+d] and land on normal; fadeout dips out over [atTime-d, atTime]; the
   // "cross" blends stay centered [atTime-d/2, atTime+d/2]. `p` is 0→1 across the window.
-  const activeTransition = useMemo(() => {
-    for (const t of allT) {
-      const d = Math.max(0.001, t.durationSec);
-      let start: number, end: number;
-      if (t.type === "fadeout") { start = t.atTime - d; end = t.atTime; }
-      else if (t.type === "crossfade" || t.type === "crosszoom") { start = t.atTime - d / 2; end = t.atTime + d / 2; }
-      else { start = t.atTime; end = t.atTime + d; } // fadein, zoomin, zoomout
-      if (playhead >= start && playhead <= end) {
-        const p = Math.min(1, Math.max(0, (playhead - start) / (end - start)));
-        return { type: t.type, p };
-      }
-    }
-    return null;
-  }, [allT, playhead]);
-
   // CSS (transform + opacity) for the active transition, applied to the video box. Directional
   // effects end at scale 1 / opacity 1 (normal); zoom is a pure scale with NO fade.
   const transitionStyle: CSSProperties = useMemo(() => {
     if (!activeTransition) return {};
-    const { type, p } = activeTransition;
+    const { marker, p } = activeTransition;
+    const { type } = marker;
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
     let scale = 1, opacity = 1;
     switch (type) {
-      case "fadein": opacity = p; break;        // black → normal
-      case "fadeout": opacity = 1 - p; break;   // normal → black
-      case "zoomin": scale = 1.3 - p * 0.3; break;  // punch-in → normal (no fade)
-      case "zoomout": scale = 0.7 + p * 0.3; break; // pull-out → normal (no fade)
-      case "crossfade": opacity = p < 0.5 ? 1 - p : p; break; // dissolve dip at the cut
+      case "fadein":
+      case "fadeout":
+        // Cover layer (fadeCoverOpacity) handles the visible transition; keep video at opacity 1
+        break;
+      case "zoomin": {
+        const base = marker.startScale ?? 1;
+        const peak = marker.endScale ?? (1 + (marker.amount ?? 0.3));
+        scale = lerp(base, peak, easeValue(marker.inEasing, p));
+        break;
+      }
+      case "zoomout":
+        scale = lerp(marker.startScale ?? (1 + (marker.amount ?? 0.3)), marker.endScale ?? 1, easeValue(marker.outEasing, p));
+        break;
+      case "crossfade":
+        opacity = p < 0.5
+          ? lerp(1, marker.startOpacity ?? 0.55, easeValue(marker.curve, p * 2))
+          : lerp(marker.endOpacity ?? 0.55, 1, easeValue(marker.curve, (p - 0.5) * 2));
+        break;
       case "crosszoom": {
-        const e = p < 0.5 ? p : 1 - p; // 0→0.5→0
-        scale = 1 + e * 0.4;
-        opacity = p < 0.5 ? 1 - p : p;
+        const e = p < 0.5 ? easeValue(marker.inEasing, p * 2) : 1 - easeValue(marker.outEasing, (p - 0.5) * 2);
+        scale = 1 + e * (marker.amount ?? 0.4);
+        opacity = p < 0.5 ? 1 - p * 0.45 : 0.55 + (p - 0.5) * 0.9;
         break;
       }
     }
-    return { transform: `scale(${scale})`, opacity, transition: "none", willChange: "transform, opacity", transformOrigin: "center" };
+    return {
+      transform: `scale(${scale})`,
+      opacity,
+      transition: "none",
+      willChange: "transform, opacity",
+      transformOrigin: `${marker.anchorX ?? 50}% ${marker.anchorY ?? 50}%`,
+    };
   }, [activeTransition]);
+  const fadeCoverOpacity = useMemo(() => {
+    if (!activeTransition || (activeTransition.marker.type !== "fadein" && activeTransition.marker.type !== "fadeout")) return 0;
+    const { marker, p } = activeTransition;
+    const eased = easeValue(marker.curve ?? (marker.type === "fadein" ? marker.inEasing : marker.outEasing), p);
+    const opacity = marker.type === "fadein"
+      ? (marker.startOpacity ?? 0) + ((marker.endOpacity ?? 1) - (marker.startOpacity ?? 0)) * eased
+      : (marker.startOpacity ?? 1) + ((marker.endOpacity ?? 0) - (marker.startOpacity ?? 1)) * eased;
+    return 1 - Math.min(1, Math.max(0, opacity));
+  }, [activeTransition]);
+
+  const [frameReady, setFrameReady] = useState(false);
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused && (v.seeking || Math.abs(v.currentTime - expectedSourceT) > 0.04)) setFrameReady(false);
+    else setFrameReady(true);
+  }, [expectedSourceT, videoRef]);
 
   // Live video-box placement (move/scale). Keep a local draft during a drag so we commit
   // to undo history only once on pointer-up.
@@ -363,15 +387,19 @@ export function PreviewCanvas({
   }
 
   // Drag handler factory for caption / text overlays (normalized canvas coords).
-  function startDrag(onMove: (nx: number, ny: number) => void) {
+  function startDrag(onMove: (nx: number, ny: number) => void, current?: { x: number; y: number }) {
     return (e: React.PointerEvent) => {
       e.preventDefault();
       const box = boxRef.current;
       if (!box) return;
       const rect = box.getBoundingClientRect();
+      const startX = (e.clientX - rect.left) / rect.width;
+      const startY = (e.clientY - rect.top) / rect.height;
+      const grabX = current ? startX - current.x : 0;
+      const grabY = current ? startY - current.y : 0;
       const move = (ev: PointerEvent) => {
-        const nx = Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width));
-        const ny = Math.min(1, Math.max(0, (ev.clientY - rect.top) / rect.height));
+        const nx = Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width - grabX));
+        const ny = Math.min(1, Math.max(0, (ev.clientY - rect.top) / rect.height - grabY));
         onMove(nx, ny);
       };
       const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
@@ -395,7 +423,7 @@ export function PreviewCanvas({
         {/* Auto blurred background — a cover-scaled, blurred copy of the same source frame,
             drawn behind the base video to fill the bars in Fit mode (z below the video box). */}
         {blurBg?.enabled && !isMulti && (
-          <canvas ref={blurCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 0 }} />
+          <canvas ref={blurCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 0, visibility: frameReady ? "visible" : "hidden" }} />
         )}
 
         {/* Base video — ONE always-mounted element so playback never resets when the playhead
@@ -407,7 +435,7 @@ export function PreviewCanvas({
           style={
             isMulti
               ? { left: 0, top: 0, width: "100%", height: "100%", overflow: "hidden", zIndex: 0, opacity: 0, pointerEvents: "none" }
-              : { left: `${frame.x * 100}%`, top: `${frame.y * 100}%`, width: `${frame.w * 100}%`, height: `${frame.h * 100}%`, overflow: "hidden", zIndex: 1, ...transitionStyle }
+              : { left: `${frame.x * 100}%`, top: `${frame.y * 100}%`, width: `${frame.w * 100}%`, height: `${frame.h * 100}%`, overflow: "hidden", zIndex: 1, visibility: frameReady ? "visible" : "hidden", ...transitionStyle }
           }
         >
           <video
@@ -417,8 +445,13 @@ export function PreviewCanvas({
             muted={false}
             preload="auto"
             onLoadedMetadata={(e) => {
-              e.currentTarget.currentTime = edit.sourceInSec + windowT;
+              e.currentTarget.currentTime = expectedSourceT;
               setSrcDims({ w: e.currentTarget.videoWidth || 16, h: e.currentTarget.videoHeight || 9 });
+            }}
+            onSeeking={() => setFrameReady(false)}
+            onSeeked={(e) => setFrameReady(Math.abs(e.currentTarget.currentTime - expectedSourceT) <= 0.06)}
+            onTimeUpdate={(e) => {
+              if (!e.currentTarget.seeking) setFrameReady(Math.abs(e.currentTarget.currentTime - expectedSourceT) <= 0.12 || !e.currentTarget.paused);
             }}
             style={isMulti ? { position: "absolute", left: 0, top: 0, width: "100%", height: "100%" } : videoInBox}
           />
@@ -429,7 +462,7 @@ export function PreviewCanvas({
             drag a slot to pan its crop; the selected slot's corner handle zooms it. */}
         {isMulti && (
           <>
-            <canvas ref={multiCanvasRef} className="absolute inset-0 h-full w-full" style={{ zIndex: 1, ...transitionStyle }} />
+            <canvas ref={multiCanvasRef} className="absolute inset-0 h-full w-full" style={{ zIndex: 1, visibility: frameReady ? "visible" : "hidden", ...transitionStyle }} />
             {slots.slice(0, panes?.length ?? 0).map((slot, i) => {
               const selected = selPane === i;
               return (
@@ -511,7 +544,7 @@ export function PreviewCanvas({
             onUpdate((d) => {
               d.caption.offset = { x: nx, y: ny };
             })
-          )}
+          , edit.caption.offset)}
         />
 
         {/* Text overlays (hook chip, titles) — draggable + selectable */}
@@ -529,7 +562,7 @@ export function PreviewCanvas({
                       const t = d.textOverlays.find((x) => x.id === o.id);
                       if (t) { t.x = nx; t.y = ny; }
                     })
-                  )(e);
+                  , { x: o.x, y: o.y })(e);
                 }}
                 className={`absolute z-30 cursor-move select-none whitespace-pre-wrap font-semibold ${selected ? "ring-2 ring-foreground" : ""}`}
                 style={{
@@ -566,7 +599,7 @@ export function PreviewCanvas({
                   const t = d.mediaOverlays.find((x) => x.id === m.id);
                   if (t) { t.x = Math.min(1 - t.w, Math.max(0, nx - t.w / 2)); t.y = Math.min(1 - t.h, Math.max(0, ny - t.h / 2)); }
                 })
-              )}
+              , { x: m.x + m.w / 2, y: m.y + m.h / 2 })}
               className="group absolute z-[25] cursor-move"
               style={{
                 left: `${m.x * 100}%`,
@@ -605,6 +638,7 @@ export function PreviewCanvas({
               />
             </div>
           ))}
+        {fadeCoverOpacity > 0 && <div className="pointer-events-none absolute inset-0 z-[60] bg-black" style={{ opacity: fadeCoverOpacity }} />}
       </div>
     </div>
   );
